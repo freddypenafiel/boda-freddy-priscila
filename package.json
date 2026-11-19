@@ -9,5 +9,10 @@
     "dev": "python -m http.server 5500",
     "build:www": "node tools/prepare-capacitor.mjs",
     "cap:sync": "npm run build:www && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
   }
 }
