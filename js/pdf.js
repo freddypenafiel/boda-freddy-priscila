@@ -3,13 +3,8 @@ import { esc, toast, fmtMoney, fmtDate } from './ui.js';
 import { STAGES, CATEGORIES } from './data/seed.js';
 
 function openPrintDoc({ title, subtitle, verse, bodyHtml }) {
-  const w = window.open('', '_blank');
-  if (!w) {
-    toast('Permite las ventanas emergentes en tu navegador para generar el PDF.', 'error');
-    return;
-  }
   const today = fmtDate(new Date().toISOString());
-  w.document.write(`<!DOCTYPE html>
+  const fullHtml = `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -138,8 +133,51 @@ function openPrintDoc({ title, subtitle, verse, bodyHtml }) {
     <span>Generado el ${esc(today)}</span>
   </footer>
 </body>
-</html>`);
-  w.document.close();
+</html>`;
+
+  const isCap = Boolean(window.Capacitor);
+  const w = !isCap ? window.open('', '_blank') : null;
+  if (w) {
+    w.document.write(fullHtml);
+    w.document.close();
+    return;
+  }
+
+  // Fallback integrado (ideal para APK Android / bloqueador de popups)
+  const back = document.createElement('div');
+  back.className = 'modal-backdrop open';
+  back.innerHTML = `
+    <div class="modal modal-wide" style="max-width:860px;height:90dvh;">
+      <header class="modal-head">
+        <h3>📄 ${esc(title)}</h3>
+        <button type="button" class="icon-btn" data-close>✕</button>
+      </header>
+      <div class="modal-body" style="padding:0;flex:1;display:flex;">
+        <iframe style="border:none;width:100%;height:100%;flex:1;background:#fff;"></iframe>
+      </div>
+      <footer class="modal-foot">
+        <button type="button" class="btn btn-outline" id="btn-dl-html">⬇️ Descargar documento</button>
+        <button type="button" class="btn btn-primary" id="btn-pr-frame">🖨️ Imprimir / PDF</button>
+      </footer>
+    </div>`;
+  document.body.appendChild(back);
+  const frame = back.querySelector('iframe');
+  frame.srcdoc = fullHtml;
+  const close = () => back.remove();
+  back.addEventListener('click', (e) => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+  back.querySelector('#btn-pr-frame').addEventListener('click', () => {
+    try { frame.contentWindow.focus(); frame.contentWindow.print(); }
+    catch { window.print(); }
+  });
+  back.querySelector('#btn-dl-html').addEventListener('click', () => {
+    const blob = new Blob([fullHtml], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${title.toLowerCase().replace(/[^a-z0-9]+/gi, '_')}.html`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Documento descargado ✔');
+  });
 }
 
 export function exportTasksPdf({ wedding, tasks, principles }) {
