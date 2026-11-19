@@ -1,7 +1,7 @@
 // Punto de entrada: arranque, acceso en vivo (Nombre + Teléfono), presencia online,
 // aprobación de solicitudes en 1 clic, navegación nativa móvil y enrutador.
 import * as db from './db.js';
-import { esc, toast } from './ui.js';
+import { esc, toast, celebrate } from './ui.js';
 import { icon } from './icons.js';
 import { ROUTES, renderComingSoon } from './modules/registry.js';
 
@@ -17,6 +17,7 @@ let pendingList = [];
 let knownPendingPhones = new Set();
 
 window.addEventListener('beforeinstallprompt', (e) => {
+  if (window.Capacitor) return;
   e.preventDefault();
   deferredInstall = e;
   const b = document.getElementById('btn-install');
@@ -226,7 +227,7 @@ function startApp(member) {
       <div class="topbar-right">
         <button class="live-pill" id="btn-live-center" title="Ver conectados ahora y solicitudes de acceso">
           <span class="live-dot"></span>
-          <span id="live-count">1 en línea</span>
+          <span id="live-count">1</span><span class="live-txt"> en línea</span>
         </button>
         ${ctx.isAdmin ? `<button class="icon-btn bell-btn" id="btn-bell" title="Solicitudes de acceso">
           ${icon('bell', 18)}
@@ -344,7 +345,7 @@ function startApp(member) {
 
 function updateLiveUi(online) {
   const lbl = document.getElementById('live-count');
-  if (lbl) lbl.textContent = `${Math.max(1, online.length)} en línea`;
+  if (lbl) lbl.textContent = String(Math.max(1, online.length));
 }
 
 async function refreshPendingRequests(isInitial) {
@@ -392,6 +393,7 @@ function paintPendingBanner() {
       b.disabled = true;
       try {
         await db.approvePendingPhone(b.dataset.quickApprove, b.dataset.name, b.dataset.role);
+        celebrate();
         toast(`¡${b.dataset.name} aprobada como ${b.dataset.role === 'admin' ? 'Admin' : 'Ayudante'}! 🎉`);
         await refreshPendingRequests(true);
       } catch (e) { toast(e.message, 'error'); b.disabled = false; }

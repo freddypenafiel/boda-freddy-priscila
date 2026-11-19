@@ -93,3 +93,24 @@ export function openModal({ title, body, submitLabel = 'Guardar', onSubmit, wide
   setTimeout(() => form.querySelector('input:not([type=hidden]),select,textarea')?.focus(), 60);
   return { close, form };
 }
+
+/** Pequeña celebración visual (chispas doradas y verde salvia) al lograr un avance. */
+export function celebrate() {
+  const colors = ['#2F4B38', '#4A6B53', '#B6863A', '#E8C57B', '#688B70'];
+  const box = document.createElement('div');
+  box.className = 'confetti-burst';
+  box.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 24; i++) {
+    const p = document.createElement('i');
+    const angle = (Math.PI * 2 * i) / 24 + (Math.random() - 0.5) * 0.3;
+    const dist = 60 + Math.random() * 110;
+    p.style.setProperty('--tx', `${Math.round(Math.cos(angle) * dist)}px`);
+    p.style.setProperty('--ty', `${Math.round(Math.sin(angle) * dist - 40)}px`);
+    p.style.setProperty('--rot', `${Math.round(Math.random() * 360)}deg`);
+    p.style.setProperty('--bg', colors[i % colors.length]);
+    p.style.animationDelay = `${(Math.random() * 0.12).toFixed(2)}s`;
+    box.appendChild(p);
+  }
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 1100);
+}

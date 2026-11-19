@@ -1,6 +1,6 @@
 // Módulo "Tareas": checklist completo por etapas, filtros y vínculo con principios bíblicos.
 import * as db from '../db.js';
-import { esc, toast, openModal, fmtDate, todayISO } from '../ui.js';
+import { esc, toast, openModal, fmtDate, todayISO, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
 import { STAGES, CATEGORIES } from '../data/seed.js';
 import { exportTasksPdf } from '../pdf.js';
@@ -159,6 +159,7 @@ export async function renderTareas(el, ctx) {
         const nextStatus = cb.checked ? 'hecho' : 'pendiente';
         try {
           await db.update('tasks', cb.dataset.toggle, { status: nextStatus });
+          if (cb.checked) celebrate();
           toast(cb.checked ? '¡Tarea completada! ✔' : 'Marcada como pendiente');
         } catch (e) { cb.checked = !cb.checked; toast(e.message, 'error'); }
       });

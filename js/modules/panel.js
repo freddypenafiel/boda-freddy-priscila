@@ -1,6 +1,6 @@
 // Módulo "Mi boda": panel principal con cuenta regresiva y progreso.
 import * as db from '../db.js';
-import { esc, toast, openModal, fmtMoney, fmtDate, fmtTime, toLocalInput, fromLocalInput, todayISO } from '../ui.js';
+import { esc, toast, openModal, fmtMoney, fmtDate, fmtTime, toLocalInput, fromLocalInput, todayISO, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
 import { STAGES, CATEGORIES, VERSES, ARTICLE_URL } from '../data/seed.js';
 import { exportFullWeddingPdf } from '../pdf.js';
@@ -231,7 +231,13 @@ export async function renderPanel(el, ctx) {
     let diff = Math.max(0, target_ms - Date.now());
     if (diff === 0) { cd.innerHTML = '<p class="cd-done">¡Ya somos esposos! 💍</p>'; return; }
     const parts = [86400000, 3600000, 60000, 1000].map((u) => { const v = Math.floor(diff / u); diff -= v * u; return v; });
-    nums.forEach((n, i) => { n.textContent = i === 0 ? parts[i] : String(parts[i]).padStart(2, '0'); });
+    nums.forEach((n, i) => {
+      const nextVal = i === 0 ? String(parts[i]) : String(parts[i]).padStart(2, '0');
+      if (n.textContent !== nextVal) {
+        n.textContent = nextVal;
+        if (i === 3) { n.classList.remove('tick'); void n.offsetWidth; n.classList.add('tick'); }
+      }
+    });
   };
   tick();
   const timer = setInterval(tick, 1000);
@@ -243,6 +249,7 @@ export async function renderPanel(el, ctx) {
       li.classList.toggle('is-done', cb.checked);
       try {
         await db.update('tasks', cb.dataset.task, { status: cb.checked ? 'hecho' : 'pendiente' });
+        if (cb.checked) celebrate();
         toast(cb.checked ? '¡Tarea completada! 🎉' : 'Tarea marcada como pendiente');
       } catch (e) {
         cb.checked = !cb.checked;

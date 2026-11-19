@@ -10,9 +10,10 @@ node tools/prepare-capacitor.mjs
 npx cap copy android
 Set-Location (Join-Path $root "android")
 & .\gradlew.bat assembleDebug --no-daemon
+if ($LASTEXITCODE -ne 0) { throw "Gradle build failed with exit code $LASTEXITCODE" }
 
 $srcApk = Join-Path $root "android\app\build\outputs\apk\debug\app-debug.apk"
-$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v2.0.apk"
+$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v3.0.apk"
 if (Test-Path $srcApk) {
   Copy-Item $srcApk $dstApk -Force
   Write-Host "APK listo: $dstApk"
