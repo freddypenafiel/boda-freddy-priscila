@@ -2,13 +2,8 @@
 --  Datos iniciales · Boda Freddy & Priscila
 --  GENERADO AUTOMÁTICAMENTE desde js/data/seed.js (npm run seed)
 --  Ejecutar DESPUÉS de schema.sql. Es seguro volver a ejecutarlo.
+--  Nota: el primer teléfono que ingrese en la web queda como Admin.
 -- =====================================================================
-
--- Correos autorizados (agrega aquí el de Priscila y los ayudantes)
-insert into public.allowed_emails (email, role, display_name) values
-  ('freddypeco1024@gmail.com', 'admin', 'Freddy')
-  -- , ('correo_de_prisci@gmail.com', 'admin', 'Priscila')
-on conflict (email) do nothing;
 
 -- Datos de la boda
 insert into public.wedding (id, couple_names, groom_name, bride_name, wedding_date, time_confirmed, city, kingdom_hall, kingdom_hall_address, reception_venue, reception_address, civil_date, civil_place, speaker, banquet_director, guest_target, budget_target, dress_colors, notes) values

@@ -16,7 +16,7 @@ export async function renderEquipo(el, ctx) {
     db.list('songs', { order: 'sort' }),
     db.list('guests'),
     db.list('seating_tables', { order: 'sort' }),
-    ctx.isAdmin ? db.list('allowed_emails', { order: 'email' }).catch(() => []) : Promise.resolve([]),
+    ctx.isAdmin ? db.list('allowed_phones', { order: 'display_name' }).catch(() => []) : Promise.resolve([]),
   ]);
 
   const couples = roles.filter((r) => /damas/i.test(r.role));
@@ -134,13 +134,13 @@ export async function renderEquipo(el, ctx) {
         <ul class="team-list">
           ${allowed.map((a) => `<li class="team-row">
             <div class="team-info">
-              <strong>${esc(a.display_name || db.authIdToLabel(a.email))}</strong>
-              <small class="muted">${esc(db.authIdToLabel(a.email))}${a.area ? ` · ${esc(a.area)}` : ''}</small>
+              <strong>${esc(a.display_name || db.formatPhone(a.phone))}</strong>
+              <small class="muted">${esc(db.formatPhone(a.phone))}${a.area ? ` · ${esc(a.area)}` : ''}</small>
             </div>
             <div class="btn-row">
               <span class="pill ${a.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${a.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
-              ${a.email.toLowerCase() !== (ctx.member?.email || '').toLowerCase()
-                ? `<button class="icon-btn icon-danger" data-del-access="${esc(a.email)}" title="Quitar acceso">${icon('trash', 14)}</button>` : ''}
+              ${a.phone !== (ctx.member?.phone || '')
+                ? `<button class="icon-btn icon-danger" data-del-access="${esc(a.phone)}" title="Quitar acceso">${icon('trash', 14)}</button>` : ''}
             </div>
           </li>`).join('')}
         </ul>
@@ -175,8 +175,8 @@ export async function renderEquipo(el, ctx) {
   // Eventos Accesos
   el.querySelector('#btn-new-access')?.addEventListener('click', openAccessModal);
   el.querySelectorAll('[data-del-access]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm(`¿Revocar el acceso autorizado de ${b.dataset.delAccess}?`)) return;
-    try { await db.removeAllowedEmail(b.dataset.delAccess); toast('Acceso eliminado'); }
+    if (!confirm(`¿Revocar el acceso autorizado de ${db.formatPhone(b.dataset.delAccess)}?`)) return;
+    try { await db.removeAllowedPhone(b.dataset.delAccess); toast('Acceso eliminado'); }
     catch (e) { toast(e.message, 'error'); }
   }));
 

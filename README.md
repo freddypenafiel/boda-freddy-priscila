@@ -19,20 +19,19 @@ Sistema completo para organizar la boda de **Freddy Peñafiel y Priscila Dumance
 ## 1. Configurar la base de datos en Supabase (una sola vez)
 
 1. Abre tu proyecto en [Supabase](https://supabase.com) → **SQL Editor → New query**.
-2. Pega todo el contenido de `supabase/schema.sql` y pulsa **Run**.
+2. Pega todo el contenido de `supabase/schema.sql` y pulsa **Run** *(si ya habías ejecutado la versión anterior, ejecuta solo `supabase/update_simple_phone.sql`)*.
 3. Abre otra consulta (**New query**), pega `supabase/seed.sql` y pulsa **Run**.
-   - *(Puedes agregar el correo de Priscila ahí mismo o después desde el módulo **Equipo → Accesos al Sistema**).*
-4. En **Authentication → URL Configuration**, añade tus URLs permitidas (por ejemplo `http://localhost:5500/` y tu futuro enlace de GitHub Pages).
+4. ¡Listo! No necesitas configurar nada en Authentication ni correos.
 
-## 2. Probarla en tu computadora
+## 2. Entrar y usarla
 
 ```bash
 npm run dev
 ```
 
-Abre `http://localhost:5500`.
-- Pulsa **"Explorar en modo demo"** para probar los 9 módulos al instante sin conexión.
-- Ve a **"Crear cuenta"** con tu correo autorizado (`freddypeco1024@gmail.com`) para trabajar en la nube sincronizado con Priscila.
+Abre `http://localhost:5500` (o tu enlace en GitHub Pages).
+- Escribe solo tu **Nombre** y **Número de teléfono** y pulsa **Entrar** (la primera persona que entra queda automáticamente como **Administrador**).
+- Luego, en **Equipo → Accesos al Sistema**, autorizas el teléfono de Priscila (como **Admin**) y de cualquier ayudante (como **Ayudante**).
 
 ## 3. Publicar en GitHub Pages
 

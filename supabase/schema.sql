@@ -1,10 +1,9 @@
 -- =====================================================================
 --  Boda Freddy & Priscila · Esquema de base de datos (Supabase / Postgres)
+--  Acceso sencillo: Nombre + Teléfono (sin correo ni contraseña)
 --  Ejecutar en: Supabase → SQL Editor → New query → pegar → Run
---  Es idempotente: se puede volver a ejecutar sin perder datos.
 -- =====================================================================
 
--- ---------- Utilidad: updated_at automático ----------
 create or replace function public.set_updated_at()
 returns trigger language plpgsql as $$
 begin
@@ -36,19 +35,10 @@ create table if not exists public.wedding (
   updated_at           timestamptz not null default now()
 );
 
--- ---------- Accesos: correos autorizados y miembros ----------
-create table if not exists public.allowed_emails (
-  email        text primary key,
-  role         text not null default 'helper' check (role in ('admin','helper')),
-  display_name text,
-  area         text,
-  created_at   timestamptz not null default now()
-);
-
-create table if not exists public.members (
-  user_id      uuid primary key references auth.users(id) on delete cascade,
-  email        text not null unique,
-  display_name text,
+-- ---------- Accesos autorizados (Nombre + Teléfono) ----------
+create table if not exists public.allowed_phones (
+  phone        text primary key,
+  display_name text not null,
   role         text not null default 'helper' check (role in ('admin','helper')),
   area         text,
   created_at   timestamptz not null default now()
@@ -188,114 +178,62 @@ begin
 end $$;
 
 -- =====================================================================
---  Seguridad: funciones de rol
+--  Acceso sencillo por Nombre + Teléfono (sin contraseña)
+--  · La primera persona que ingresa queda automáticamente como admin.
+--  · Luego los admins autorizan a Priscila y ayudantes por teléfono.
 -- =====================================================================
-create or replace function public.is_member()
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.members where user_id = auth.uid());
-$$;
-
-create or replace function public.is_admin()
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.members where user_id = auth.uid() and role = 'admin');
-$$;
-
--- Al registrarse un usuario: si no hay ningún miembro aún, el primero entra como admin;
--- si ya hay miembros, entra si su teléfono/identificador está autorizado en allowed_emails.
-create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $$
+create or replace function public.login_with_phone(p_name text, p_phone text)
+returns public.allowed_phones language plpgsql security definer set search_path = public as $$
 declare
-  a public.allowed_emails;
-  v_name text := coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1));
+  v_phone text := regexp_replace(coalesce(p_phone, ''), '\D', '', 'g');
+  v_name  text := nullif(trim(coalesce(p_name, '')), '');
+  rec     public.allowed_phones;
 begin
-  if not exists (select 1 from public.members) then
-    insert into public.allowed_emails (email, role, display_name, area)
-    values (lower(new.email), 'admin', v_name, 'Novios')
-    on conflict (email) do update set role = 'admin';
-    insert into public.members (user_id, email, display_name, role, area)
-    values (new.id, lower(new.email), v_name, 'admin', 'Novios')
-    on conflict (user_id) do nothing;
-    return new;
+  if length(v_phone) = 10 and left(v_phone, 1) = '0' then
+    v_phone := '593' || substr(v_phone, 2);
+  end if;
+  if length(v_phone) < 7 then
+    return null;
   end if;
 
-  select * into a from public.allowed_emails where lower(email) = lower(new.email);
+  if not exists (select 1 from public.allowed_phones) then
+    insert into public.allowed_phones (phone, display_name, role, area)
+    values (v_phone, coalesce(v_name, v_phone), 'admin', 'Novios')
+    returning * into rec;
+    return rec;
+  end if;
+
+  select * into rec from public.allowed_phones where phone = v_phone;
   if found then
-    insert into public.members (user_id, email, display_name, role, area)
-    values (new.id, lower(new.email), coalesce(a.display_name, v_name), a.role, a.area)
-    on conflict (user_id) do nothing;
-  end if;
-  return new;
-end $$;
-
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-  after insert on auth.users
-  for each row execute function public.handle_new_user();
-
--- Para usuarios ya registrados: reclama membresía (o se vuelve admin si members está vacío).
-create or replace function public.claim_membership()
-returns public.members language plpgsql security definer set search_path = public as $$
-declare
-  a public.allowed_emails;
-  m public.members;
-  v_email text := lower(auth.jwt() ->> 'email');
-  v_name  text := coalesce(auth.jwt() -> 'user_metadata' ->> 'display_name', split_part(v_email, '@', 1));
-begin
-  if auth.uid() is null then return null; end if;
-
-  if not exists (select 1 from public.members) then
-    insert into public.allowed_emails (email, role, display_name, area)
-    values (v_email, 'admin', v_name, 'Novios')
-    on conflict (email) do update set role = 'admin';
+    if v_name is not null and (rec.display_name is null or rec.display_name = '' or rec.display_name = v_phone) then
+      update public.allowed_phones set display_name = v_name where phone = v_phone returning * into rec;
+    end if;
+    return rec;
   end if;
 
-  select * into a from public.allowed_emails where lower(email) = v_email;
-  if found then
-    insert into public.members (user_id, email, display_name, role, area)
-    values (auth.uid(), v_email, coalesce(a.display_name, v_name), a.role, a.area)
-    on conflict (user_id) do update
-      set role = excluded.role,
-          area = excluded.area,
-          display_name = coalesce(public.members.display_name, excluded.display_name);
-  end if;
-  select * into m from public.members where user_id = auth.uid();
-  return m;
+  return null;
 end $$;
 
 -- =====================================================================
---  Row Level Security
---  · Miembros (admin y helper): pueden LEER todo.
---  · Admins (Freddy y Priscila): pueden crear/editar/borrar todo.
---  · Helpers: además pueden actualizar tareas (marcar avances).
---  · Anónimos: sin acceso directo; solo funciones RSVP públicas.
+--  Permisos y políticas para operación directa sin contraseña
 -- =====================================================================
 do $$
 declare t text;
 begin
   foreach t in array array['wedding','principles','tasks','guest_groups','seating_tables','guests',
-                           'vendors','budget_items','payments','team_roles','songs','members'] loop
+                           'vendors','budget_items','payments','team_roles','songs','allowed_phones'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists members_read on public.%I', t);
-    execute format('create policy members_read on public.%I for select to authenticated using (public.is_member())', t);
     execute format('drop policy if exists admins_write on public.%I', t);
-    execute format('create policy admins_write on public.%I for all to authenticated
-                    using (public.is_admin()) with check (public.is_admin())', t);
+    execute format('drop policy if exists helpers_update_tasks on public.%I', t);
+    execute format('drop policy if exists app_access on public.%I', t);
+    execute format('create policy app_access on public.%I for all to anon, authenticated using (true) with check (true)', t);
   end loop;
 end $$;
 
-drop policy if exists helpers_update_tasks on public.tasks;
-create policy helpers_update_tasks on public.tasks
-  for update to authenticated using (public.is_member()) with check (public.is_member());
-
-alter table public.allowed_emails enable row level security;
-drop policy if exists admins_all on public.allowed_emails;
-create policy admins_all on public.allowed_emails
-  for all to authenticated using (public.is_admin()) with check (public.is_admin());
-
--- Permisos de la API
-revoke all on all tables in schema public from anon;
-grant select, insert, update, delete on all tables in schema public to authenticated;
-grant usage, select on all sequences in schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+grant execute on function public.login_with_phone(text, text) to anon, authenticated;
 
 -- =====================================================================
 --  Funciones públicas para la web de invitados (RSVP con código)
@@ -337,13 +275,9 @@ begin
   return found;
 end $$;
 
-revoke execute on function public.get_public_wedding() from public;
-revoke execute on function public.get_invitation(text) from public;
-revoke execute on function public.submit_rsvp(text, text, int, text, text) from public;
 grant execute on function public.get_public_wedding() to anon, authenticated;
 grant execute on function public.get_invitation(text) to anon, authenticated;
 grant execute on function public.submit_rsvp(text, text, int, text, text) to anon, authenticated;
-grant execute on function public.claim_membership() to authenticated;
 
 -- =====================================================================
 --  Tiempo real (los cambios se ven al instante en todos los dispositivos)
@@ -351,7 +285,8 @@ grant execute on function public.claim_membership() to authenticated;
 do $$
 declare t text;
 begin
-  foreach t in array array['wedding','tasks','guests','team_roles','budget_items','payments','vendors','seating_tables'] loop
+  foreach t in array array['wedding','tasks','guests','guest_groups','team_roles','songs',
+                           'budget_items','payments','vendors','seating_tables','allowed_phones'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;

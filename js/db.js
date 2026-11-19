@@ -1,14 +1,14 @@
 // Capa de datos: misma API para Supabase (nube) y modo demo (localStorage).
-// Autenticación por Teléfono + Contraseña (sin pedir correo electrónico).
+// Acceso sencillo: solo Nombre + Teléfono (sin correo ni contraseña).
 import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_CDN } from './config.js';
 import { buildSeed } from './data/seed.js';
 
-const DEMO_KEY = 'fp_boda_demo_v3';
+const DEMO_KEY = 'fp_boda_demo_v4';
 const MODE_KEY = 'fp_boda_mode';
-const PHONE_DOMAIN = 'boda-fp.app';
+const SESSION_KEY = 'fp_boda_phone_session';
 const REALTIME_TABLES = [
   'wedding', 'tasks', 'guests', 'guest_groups', 'team_roles',
-  'songs', 'budget_items', 'payments', 'vendors', 'seating_tables',
+  'songs', 'budget_items', 'payments', 'vendors', 'seating_tables', 'allowed_phones',
 ];
 
 let mode = null;     // 'cloud' | 'demo'
@@ -26,7 +26,6 @@ const randCode = () => Math.random().toString(36).slice(2, 12).padEnd(10, '7');
 export function normalizePhone(raw) {
   let d = String(raw || '').replace(/\D/g, '');
   if (!d) return '';
-  // Ecuador: 09XXXXXXXX (10 dígitos) -> 5939XXXXXXXX
   if (d.startsWith('0') && d.length === 10) d = '593' + d.slice(1);
   return d;
 }
@@ -36,20 +35,6 @@ export function formatPhone(raw) {
   if (!d) return '';
   if (d.startsWith('593') && d.length === 12) return '0' + d.slice(3);
   return d;
-}
-
-export function phoneToAuthId(raw) {
-  const s = String(raw || '').trim().toLowerCase();
-  if (s.includes('@')) return s; // compatibilidad con registros antiguos
-  const d = normalizePhone(s);
-  if (d.length < 7) throw new Error('Ingresa un número de teléfono válido (al menos 7 dígitos).');
-  return `${d}@${PHONE_DOMAIN}`;
-}
-
-export function authIdToLabel(emailOrPhone) {
-  const s = String(emailOrPhone || '').trim();
-  if (s.endsWith(`@${PHONE_DOMAIN}`)) return formatPhone(s.split('@')[0]);
-  return s;
 }
 
 /* ---------------- Modo ---------------- */
@@ -66,9 +51,7 @@ export async function initDb(m = preferredMode()) {
     if (!sb) {
       try {
         const { createClient } = await import(SUPABASE_CDN);
-        sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-        });
+        sb = createClient(SUPABASE_URL, SUPABASE_KEY);
       } catch (e) {
         console.warn('No se pudo cargar Supabase:', e);
         throw new Error('No se pudo conectar con la nube. Revisa tu conexión a internet o explora en modo demo.');
@@ -100,10 +83,9 @@ function loadDemo() {
       });
     }
   }
-  s.members = [{ user_id: 'demo', email: '593999999999@boda-fp.app', display_name: 'Freddy (demo)', role: 'admin', area: 'Novios' }];
-  s.allowed_emails = [
-    { email: '593999999999@boda-fp.app', role: 'admin', display_name: 'Freddy', area: 'Novios' },
-    { email: '593988888888@boda-fp.app', role: 'admin', display_name: 'Priscila', area: 'Novios' },
+  s.allowed_phones = [
+    { phone: '593999999999', display_name: 'Freddy (demo)', role: 'admin', area: 'Novios' },
+    { phone: '593988888888', display_name: 'Priscila', role: 'admin', area: 'Novios' },
   ];
   localStorage.setItem(DEMO_KEY, JSON.stringify(s));
   return s;
@@ -120,57 +102,68 @@ window.addEventListener('storage', (e) => {
   if (mode === 'demo' && e.key === DEMO_KEY) { demo = loadDemo(); emit('*'); }
 });
 
-/* ---------------- Autenticación (Teléfono + Contraseña) ---------------- */
-const AUTH_ERRORS = [
-  [/invalid login credentials/i, 'Teléfono o contraseña incorrectos.'],
-  [/email not confirmed/i, 'Falta desactivar “Confirm email” en Supabase (Authentication → Providers → Email).'],
-  [/already registered|already been registered/i, 'Ese número de teléfono ya tiene una cuenta. Usa “Iniciar sesión”.'],
-  [/password should be at least/i, 'La contraseña debe tener al menos 6 caracteres.'],
-  [/rate limit|too many/i, 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'],
-  [/invalid email|unable to validate email/i, 'Número de teléfono no válido.'],
-  [/failed to fetch|network/i, 'Sin conexión con el servidor. Revisa tu internet.'],
-];
-const authError = (e) => new Error(AUTH_ERRORS.find(([re]) => re.test(e?.message || ''))?.[1] || e?.message || 'Error de autenticación');
+/* ---------------- Sesión sencilla (Nombre + Teléfono) ---------------- */
+function readSavedSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveSession(rec) {
+  if (rec) localStorage.setItem(SESSION_KEY, JSON.stringify(rec));
+  else localStorage.removeItem(SESSION_KEY);
+}
 
 export const auth = {
-  async session() {
-    if (mode === 'demo') return { user: { id: 'demo', email: '593999999999@boda-fp.app' } };
-    const { data } = await sb.auth.getSession();
-    return data.session;
+  saved() {
+    if (mode === 'demo') return demo.allowed_phones[0];
+    return readSavedSession();
   },
-  async signIn(phone, password) {
-    const email = phoneToAuthId(phone);
-    const { data, error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) throw authError(error);
-    return data.session;
+  async login(name, phone) {
+    const cleanPhone = normalizePhone(phone);
+    if (cleanPhone.length < 7) throw new Error('Ingresa un número de teléfono válido (al menos 7 dígitos).');
+    const cleanName = String(name || '').trim();
+    if (!cleanName) throw new Error('Escribe tu nombre.');
+
+    if (mode === 'demo') {
+      const rec = { phone: cleanPhone, display_name: cleanName, role: 'admin', area: 'Novios' };
+      return rec;
+    }
+
+    const { data, error } = await sb.rpc('login_with_phone', { p_name: cleanName, p_phone: cleanPhone });
+    if (error) {
+      if (/login_with_phone/i.test(error.message)) {
+        throw new Error('Falta ejecutar supabase/update_simple_phone.sql en Supabase (SQL Editor).');
+      }
+      throw new Error(error.message);
+    }
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !row.phone) {
+      saveSession(null);
+      return null; // No autorizado aún
+    }
+    saveSession(row);
+    return row;
   },
-  async signUp(phone, password, displayName) {
-    const email = phoneToAuthId(phone);
-    const cleanPhone = formatPhone(phone);
-    const { data, error } = await sb.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName || cleanPhone, phone: cleanPhone } },
-    });
-    if (error) throw authError(error);
-    return data;
+  async verifySaved() {
+    if (mode === 'demo') return demo.allowed_phones[0];
+    const saved = readSavedSession();
+    if (!saved?.phone) return null;
+    try {
+      const { data, error } = await sb.from('allowed_phones').select('*').eq('phone', saved.phone).maybeSingle();
+      if (error || !data) {
+        saveSession(null);
+        return null;
+      }
+      saveSession(data);
+      return data;
+    } catch {
+      return saved;
+    }
   },
   async signOut() {
-    if (mode === 'cloud' && sb) await sb.auth.signOut();
-  },
-  async member() {
-    if (mode === 'demo') return demo.members[0];
-    const { data, error } = await sb.rpc('claim_membership');
-    if (error) console.warn('claim_membership:', error.message);
-    const row = Array.isArray(data) ? data[0] : data;
-    if (row && row.user_id) return row;
-    const s = await this.session();
-    if (!s) return null;
-    const { data: m } = await sb.from('members').select('*').eq('user_id', s.user.id).maybeSingle();
-    return m || null;
-  },
-  onChange(cb) {
-    if (mode === 'cloud') sb.auth.onAuthStateChange((evt, session) => cb(evt, session));
+    saveSession(null);
   },
 };
 
@@ -244,34 +237,35 @@ export async function remove(table, id) {
   emit(table);
 }
 
-/* ---------------- Teléfonos autorizados (almacenados en allowed_emails) ---------------- */
+/* ---------------- Teléfonos autorizados (PK: phone) ---------------- */
 export async function upsertAllowedPhone({ phone, display_name, role, area }) {
-  const email = phoneToAuthId(phone);
-  const rec = { email, display_name: display_name || formatPhone(phone), role: role || 'helper', area: area || null };
+  const clean = normalizePhone(phone);
+  if (clean.length < 7) throw new Error('Ingresa un número de teléfono válido.');
+  const rec = { phone: clean, display_name: display_name || formatPhone(clean), role: role || 'helper', area: area || null };
   if (mode === 'demo') {
-    const rows = (demo.allowed_emails ||= []);
-    const i = rows.findIndex((r) => r.email.toLowerCase() === email);
+    const rows = (demo.allowed_phones ||= []);
+    const i = rows.findIndex((r) => r.phone === clean);
     if (i >= 0) rows[i] = { ...rows[i], ...rec };
     else rows.push({ ...rec, created_at: new Date().toISOString() });
-    saveDemo(); emit('allowed_emails');
+    saveDemo(); emit('allowed_phones');
     return rec;
   }
-  const { data, error } = await sb.from('allowed_emails').upsert(rec, { onConflict: 'email' }).select().single();
+  const { data, error } = await sb.from('allowed_phones').upsert(rec, { onConflict: 'phone' }).select().single();
   if (error) throw new Error(error.message);
-  emit('allowed_emails');
+  emit('allowed_phones');
   return data;
 }
 
-export async function removeAllowedEmail(idOrEmail) {
-  const clean = String(idOrEmail || '').trim().toLowerCase();
+export async function removeAllowedPhone(phone) {
+  const clean = normalizePhone(phone);
   if (mode === 'demo') {
-    demo.allowed_emails = (demo.allowed_emails || []).filter((r) => r.email.toLowerCase() !== clean);
-    saveDemo(); emit('allowed_emails');
+    demo.allowed_phones = (demo.allowed_phones || []).filter((r) => r.phone !== clean);
+    saveDemo(); emit('allowed_phones');
     return;
   }
-  const { error } = await sb.from('allowed_emails').delete().eq('email', clean);
+  const { error } = await sb.from('allowed_phones').delete().eq('phone', clean);
   if (error) throw new Error(error.message);
-  emit('allowed_emails');
+  emit('allowed_phones');
 }
 
 export async function getWedding() {

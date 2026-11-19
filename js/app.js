@@ -1,4 +1,4 @@
-// Punto de entrada: arranque, autenticación (Nombre + Teléfono + Contraseña), estructura y enrutador.
+// Punto de entrada: arranque, acceso sencillo (Nombre + Teléfono), estructura y enrutador.
 import * as db from './db.js';
 import { esc, toast } from './ui.js';
 import { icon } from './icons.js';
@@ -30,27 +30,16 @@ async function boot() {
   } catch (e) {
     return renderLogin(e.message);
   }
-  if (db.getMode() === 'demo') return startApp(await db.auth.member());
+  if (db.getMode() === 'demo') return startApp(db.auth.saved());
 
-  db.auth.onChange((evt) => {
-    if (evt === 'SIGNED_OUT') renderLogin();
-  });
-  const session = await db.auth.session();
-  if (!session) return renderLogin();
-  await afterLogin();
-}
-
-async function afterLogin() {
-  const session = await db.auth.session();
-  const member = await db.auth.member();
-  if (!member) return renderNoAccess(db.authIdToLabel(session?.user?.email || ''));
+  const member = await db.auth.verifySaved();
+  if (!member) return renderLogin();
   startApp(member);
 }
 
-/* =================== Login (Nombre + Teléfono + Contraseña) =================== */
+/* =================== Acceso (Solo Nombre + Teléfono) =================== */
 function renderLogin(errorMsg = '') {
   teardown();
-  let tab = 'in';
   root.innerHTML = `
   <div class="auth">
     <section class="auth-hero">
@@ -68,81 +57,50 @@ function renderLogin(errorMsg = '') {
     <section class="auth-panel">
       <div class="auth-card">
         <span class="auth-logo">${icon('rings', 30)}</span>
-        <h2 id="auth-title">Bienvenidos</h2>
-        <p class="muted" id="auth-sub">Ingresa con tu teléfono y contraseña.</p>
-        <div class="tabs" role="tablist">
-          <button type="button" class="tab active" data-tab="in">Iniciar sesión</button>
-          <button type="button" class="tab" data-tab="up">Crear cuenta</button>
-        </div>
+        <h2>Bienvenidos</h2>
+        <p class="muted" style="margin-bottom:18px;">Ingresa solo con tu nombre y tu número de teléfono (sin correo ni contraseña).</p>
         <form id="auth-form" novalidate>
-          <label class="field" id="f-name" hidden>
+          <label class="field">
             <span>Tu nombre</span>
-            <input name="name" autocomplete="name" placeholder="Ej. Freddy o Priscila">
+            <input name="name" autocomplete="name" required placeholder="Ej. Freddy o Priscila">
           </label>
           <label class="field">
             <span>Número de teléfono</span>
             <input name="phone" type="tel" autocomplete="tel" required placeholder="Ej. 0991234567">
           </label>
-          <label class="field">
-            <span>Contraseña</span>
-            <input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres">
-          </label>
           <p class="form-error" id="auth-error" ${errorMsg ? '' : 'hidden'}>${esc(errorMsg)}</p>
-          <p class="form-ok" id="auth-ok" hidden></p>
-          <button class="btn btn-primary btn-block" type="submit" id="auth-submit">${icon('lock', 16)} Entrar</button>
+          <button class="btn btn-primary btn-block" type="submit" id="auth-submit">${icon('arrow', 16)} Entrar al organizador</button>
         </form>
         <div class="divider"><span>o</span></div>
         <button class="btn btn-outline btn-block" id="btn-demo">${icon('device', 16)} Explorar en modo demo</button>
-        <p class="fine">Sin correos ni confirmaciones. Solo las personas autorizadas por Freddy y Priscila pueden ver los datos reales.</p>
+        <p class="fine">Solo los teléfonos autorizados por Freddy y Priscila pueden ver los datos reales en la nube.</p>
       </div>
     </section>
   </div>`;
 
   const form = root.querySelector('#auth-form');
   const errEl = root.querySelector('#auth-error');
-  const okEl = root.querySelector('#auth-ok');
   const submit = root.querySelector('#auth-submit');
-  const showErr = (m) => { errEl.textContent = m; errEl.hidden = !m; okEl.hidden = true; };
-  const showOk = (m) => { okEl.textContent = m; okEl.hidden = false; errEl.hidden = true; };
-
-  root.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => {
-    tab = b.dataset.tab;
-    root.querySelectorAll('.tab').forEach((x) => x.classList.toggle('active', x === b));
-    root.querySelector('#f-name').hidden = tab !== 'up';
-    root.querySelector('#auth-title').textContent = tab === 'up' ? 'Crear cuenta' : 'Bienvenidos';
-    root.querySelector('#auth-sub').textContent = tab === 'up'
-      ? 'Solo necesitas tu nombre, teléfono y una contraseña.'
-      : 'Ingresa con tu teléfono y contraseña.';
-    submit.innerHTML = tab === 'up' ? `${icon('plus', 16)} Crear cuenta y entrar` : `${icon('lock', 16)} Entrar`;
-    form.password.autocomplete = tab === 'up' ? 'new-password' : 'current-password';
-    showErr('');
-  }));
-
-  async function ensureCloud() {
-    if (db.getMode() !== 'cloud') {
-      db.setPreferredMode('cloud');
-      await db.initDb('cloud');
-    }
-  }
+  const showErr = (m) => { errEl.textContent = m; errEl.hidden = !m; };
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const name = form.name.value.trim();
     const phone = form.phone.value.trim();
-    const password = form.password.value;
-    if (tab === 'up' && !name) return showErr('Escribe tu nombre.');
+    if (!name) return showErr('Escribe tu nombre.');
     if (!phone) return showErr('Escribe tu número de teléfono.');
-    if (password.length < 6) return showErr('La contraseña debe tener al menos 6 caracteres.');
     submit.disabled = true;
+    showErr('');
     try {
-      await ensureCloud();
-      if (tab === 'up') {
-        const data = await db.auth.signUp(phone, password, name);
-        if (data.session) await afterLogin();
-        else showOk('Cuenta creada. Desactiva “Confirm email” en Supabase (Authentication → Providers → Email) para entrar directo sin correo.');
+      if (db.getMode() !== 'cloud') {
+        db.setPreferredMode('cloud');
+        await db.initDb('cloud');
+      }
+      const member = await db.auth.login(name, phone);
+      if (!member) {
+        renderNoAccess(name, db.formatPhone(phone));
       } else {
-        await db.auth.signIn(phone, password);
-        await afterLogin();
+        startApp(member);
       }
     } catch (err) {
       showErr(err.message);
@@ -154,25 +112,31 @@ function renderLogin(errorMsg = '') {
   root.querySelector('#btn-demo').addEventListener('click', async () => {
     db.setPreferredMode('demo');
     await db.initDb('demo');
-    startApp(await db.auth.member());
+    startApp(db.auth.saved());
   });
 }
 
-function renderNoAccess(phoneLabel = '') {
+function renderNoAccess(name = '', phoneLabel = '') {
   teardown();
   root.innerHTML = `
   <div class="center-screen">
     <div class="auth-card">
       <span class="auth-logo warn">${icon('lock', 30)}</span>
-      <h2>Tu cuenta aún no tiene acceso</h2>
-      ${phoneLabel ? `<p class="muted" style="margin-bottom:8px;">Sesión iniciada con: <strong>${esc(phoneLabel)}</strong></p>` : ''}
-      <p class="muted">Pide a Freddy o a Priscila que autoricen tu número de teléfono en <strong>Equipo → Accesos</strong>. Cuando lo hagan, pulsa reintentar.</p>
-      <button class="btn btn-primary btn-block" id="btn-retry" style="margin-top:14px;">${icon('refresh', 16)} Ya me autorizaron, reintentar</button>
-      <button class="btn btn-ghost btn-block" id="btn-out">${icon('logout', 16)} Cerrar sesión</button>
+      <h2>Número aún no autorizado</h2>
+      <p class="muted" style="margin-bottom:8px;"><strong>${esc(name)}</strong> · ${esc(phoneLabel)}</p>
+      <p class="muted">Pide a Freddy o a Priscila que agreguen tu número en <strong>Equipo → Accesos al Sistema</strong> y luego vuelve a intentar.</p>
+      <button class="btn btn-primary btn-block" id="btn-retry" style="margin-top:14px;">${icon('refresh', 16)} Ya me autorizaron, entrar</button>
+      <button class="btn btn-ghost btn-block" id="btn-back">${icon('arrow', 16)} Cambiar número</button>
     </div>
   </div>`;
-  root.querySelector('#btn-retry').addEventListener('click', afterLogin);
-  root.querySelector('#btn-out').addEventListener('click', async () => { await db.auth.signOut(); renderLogin(); });
+  root.querySelector('#btn-retry').addEventListener('click', async () => {
+    try {
+      const m = await db.auth.login(name, phoneLabel);
+      if (m) startApp(m);
+      else toast('Ese número todavía no está autorizado.', 'error');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+  root.querySelector('#btn-back').addEventListener('click', () => renderLogin());
 }
 
 /* =================== App =================== */
@@ -180,7 +144,7 @@ function startApp(member) {
   teardown();
   const mode = db.getMode();
   ctx = { member, isAdmin: member?.role === 'admin', mode };
-  const name = member?.display_name || db.authIdToLabel(member?.email) || 'Usuario';
+  const name = member?.display_name || db.formatPhone(member?.phone) || 'Usuario';
 
   root.innerHTML = `
   <div class="app">
@@ -198,13 +162,13 @@ function startApp(member) {
           <span class="avatar">${esc(name.trim().charAt(0).toUpperCase())}</span>
           <span class="user-meta"><strong>${esc(name)}</strong><small>${ctx.isAdmin ? 'Administrador' : 'Ayudante'}</small></span>
         </div>
-        <button class="icon-btn" id="btn-logout" title="${mode === 'demo' ? 'Salir del modo demo' : 'Cerrar sesión'}">${icon('logout', 18)}</button>
+        <button class="icon-btn" id="btn-logout" title="Salir">${icon('logout', 18)}</button>
       </div>
     </header>
     <nav class="modnav" aria-label="Módulos">
       <div class="modnav-inner">
         ${ROUTES.map((r) => `<a class="modnav-item" href="#/${r.key}" data-key="${r.key}">
-          ${icon(r.icon, 24)}<span>${esc(r.label)}</span>${r.phase ? '<i class="soon-dot" title="Próximamente"></i>' : ''}</a>`).join('')}
+          ${icon(r.icon, 24)}<span>${esc(r.label)}</span></a>`).join('')}
       </div>
     </nav>
     <main id="view" class="view" tabindex="-1"></main>
@@ -222,13 +186,9 @@ function startApp(member) {
   });
 
   root.querySelector('#btn-logout').addEventListener('click', async () => {
-    if (mode === 'demo') {
-      db.setPreferredMode('cloud');
-      renderLogin();
-    } else {
-      await db.auth.signOut();
-      renderLogin();
-    }
+    await db.auth.signOut();
+    if (mode === 'demo') db.setPreferredMode('cloud');
+    renderLogin();
   });
   root.querySelector('#btn-reset')?.addEventListener('click', () => {
     if (confirm('¿Reiniciar los datos de demostración? Se perderán los cambios hechos en modo demo.')) {
@@ -277,7 +237,7 @@ async function renderRoute(isRefresh = false) {
   } catch (e) {
     console.error(e);
     view.innerHTML = `<div class="error-box">${icon('alert', 22)}<div><strong>No se pudieron cargar los datos.</strong><p>${esc(e.message)}</p>
-      <p class="muted">Si es la primera vez, revisa que hayas ejecutado <code>supabase/schema.sql</code> y <code>supabase/seed.sql</code>.</p></div></div>`;
+      <p class="muted">Revisa haber ejecutado <code>supabase/update_simple_phone.sql</code> en Supabase.</p></div></div>`;
   }
 }
 

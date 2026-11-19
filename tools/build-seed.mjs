@@ -34,13 +34,8 @@ let out = `-- ==================================================================
 --  Datos iniciales · Boda Freddy & Priscila
 --  GENERADO AUTOMÁTICAMENTE desde js/data/seed.js (npm run seed)
 --  Ejecutar DESPUÉS de schema.sql. Es seguro volver a ejecutarlo.
+--  Nota: el primer teléfono que ingrese en la web queda como Admin.
 -- =====================================================================
-
--- Correos autorizados (agrega aquí el de Priscila y los ayudantes)
-insert into public.allowed_emails (email, role, display_name) values
-  ('freddypeco1024@gmail.com', 'admin', 'Freddy')
-  -- , ('correo_de_prisci@gmail.com', 'admin', 'Priscila')
-on conflict (email) do nothing;
 
 -- Datos de la boda
 ${insert('wedding', [w], wCols, 'on conflict (id) do nothing')}
