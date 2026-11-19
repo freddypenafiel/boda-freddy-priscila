@@ -1,0 +1,13 @@
+{
+  "name": "boda-freddy-priscila-app",
+  "version": "1.0.0",
+  "description": "Organizador completo de la boda de Freddy & Priscila · Una boda que honra a Jehová",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "seed": "node tools/build-seed.mjs",
+    "dev": "python -m http.server 5500",
+    "build:www": "node tools/prepare-capacitor.mjs",
+    "cap:sync": "npm run build:www && npx cap sync android"
+  }
+}

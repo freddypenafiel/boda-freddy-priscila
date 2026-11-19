@@ -1,0 +1,12 @@
+{
+  "appId": "ec.freddyypriscila.boda",
+  "appName": "Boda Freddy & Priscila",
+  "webDir": "www",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#2F4B38"
+  }
+}
