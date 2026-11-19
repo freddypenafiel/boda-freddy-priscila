@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { esc, toast, openModal, fmtDate, todayISO } from '../ui.js';
 import { icon } from '../icons.js';
 import { STAGES, CATEGORIES } from '../data/seed.js';
+import { exportTasksPdf } from '../pdf.js';
 
 const STATUS_LABELS = {
   pendiente: 'Pendiente',
@@ -13,7 +14,8 @@ const STATUS_LABELS = {
 const filterState = { stage: 'all', category: 'all', status: 'all', principle: 'all', q: '' };
 
 export async function renderTareas(el, ctx) {
-  const [tasks, principles] = await Promise.all([
+  const [wedding, tasks, principles] = await Promise.all([
+    db.getWedding(),
     db.list('tasks', { order: 'sort' }),
     db.list('principles', { order: 'sort' }),
   ]);
@@ -34,7 +36,10 @@ export async function renderTareas(el, ctx) {
       <h1>Tareas y Checklist</h1>
       <p>Organiza cada paso por etapas. Cada tarea puede vincularse con un principio del artículo de <em>La Atalaya</em> y asignarse a un colaborador.</p>
     </div>
-    ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-task">${icon('plus', 16)} Nueva tarea</button>` : ''}
+    <div class="head-actions">
+      <button class="btn btn-outline" id="btn-export-tasks-pdf">${icon('printer', 16)} Exportar PDF</button>
+      ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-task">${icon('plus', 16)} Nueva tarea</button>` : ''}
+    </div>
   </header>
 
   <section class="card progress-banner">
@@ -193,6 +198,7 @@ export async function renderTareas(el, ctx) {
   el.querySelector('#f-cat').addEventListener('change', (e) => { filterState.category = e.target.value; paint(); });
   el.querySelector('#f-status').addEventListener('change', (e) => { filterState.status = e.target.value; paint(); });
   el.querySelector('#f-prin').addEventListener('change', (e) => { filterState.principle = e.target.value; paint(); });
+  el.querySelector('#btn-export-tasks-pdf').addEventListener('click', () => exportTasksPdf({ wedding, tasks, principles }));
   el.querySelector('#btn-new-task')?.addEventListener('click', () => openTaskModal(null, principles, tasks.length));
 }
 

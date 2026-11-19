@@ -2,6 +2,7 @@
 import * as db from '../db.js';
 import { esc, toast, openModal } from '../ui.js';
 import { icon } from '../icons.js';
+import { exportGuestsPdf } from '../pdf.js';
 
 const RSVP_LABELS = { pendiente: 'Pendiente', si: 'Confirmado', no: 'No asiste' };
 const SIDE_LABELS = { ambos: 'Ambos', novio: 'Lado de Freddy', novia: 'Lado de Priscila' };
@@ -54,6 +55,7 @@ export async function renderInvitados(el, ctx) {
       <p>Organiza tus <strong>${target} invitados</strong> por grupo, envía invitaciones personales por WhatsApp y sigue las confirmaciones en tiempo real.</p>
     </div>
     <div class="head-actions">
+      <button class="btn btn-outline" id="btn-export-guests-pdf">${icon('printer', 16)} Exportar PDF</button>
       <button class="btn btn-outline" id="btn-export-csv">${icon('download', 16)} Exportar CSV</button>
       ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-guest">${icon('userPlus', 16)} Agregar invitado</button>` : ''}
     </div>
@@ -237,6 +239,7 @@ export async function renderInvitados(el, ctx) {
   el.querySelector('#g-side').addEventListener('change', (e) => { fState.side = e.target.value; paint(); });
   el.querySelector('#g-wit').addEventListener('change', (e) => { fState.witness = e.target.value; paint(); });
   el.querySelector('#btn-new-guest')?.addEventListener('click', () => openGuestModal(null, groups, tables));
+  el.querySelector('#btn-export-guests-pdf').addEventListener('click', () => exportGuestsPdf({ wedding, guests, groups, tables }));
   el.querySelector('#btn-export-csv').addEventListener('click', () => exportCsv(guests, groupById, tableById));
 }
 

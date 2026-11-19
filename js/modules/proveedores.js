@@ -2,6 +2,7 @@
 import * as db from '../db.js';
 import { esc, toast, openModal, fmtMoney } from '../ui.js';
 import { icon } from '../icons.js';
+import { exportVendorsPdf } from '../pdf.js';
 
 const VENDOR_CATS = [
   'Local de recepción', 'Banquete / Catering', 'Fotografía y video',
@@ -24,7 +25,10 @@ function cleanPhone(p) {
 }
 
 export async function renderProveedores(el, ctx) {
-  const vendors = await db.list('vendors', { order: 'name' });
+  const [wedding, vendors] = await Promise.all([
+    db.getWedding(),
+    db.list('vendors', { order: 'name' }),
+  ]);
 
   const reserved = vendors.filter((v) => v.status === 'reservado' || v.status === 'pagado');
   const totalQuoted = reserved.reduce((n, v) => n + Number(v.quote || 0), 0);
@@ -36,7 +40,10 @@ export async function renderProveedores(el, ctx) {
       <h1>Proveedores y Cotizaciones</h1>
       <p>Compara opciones de local, comida, foto, flores y alquileres. Llama o escribe por WhatsApp con un toque y pásalos al presupuesto.</p>
     </div>
-    ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-vendor">${icon('plus', 16)} Nuevo proveedor</button>` : ''}
+    <div class="head-actions">
+      <button class="btn btn-outline" id="btn-export-vendors-pdf">${icon('printer', 16)} Exportar PDF</button>
+      ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-vendor">${icon('plus', 16)} Nuevo proveedor</button>` : ''}
+    </div>
   </header>
 
   <section class="kpi-strip">
@@ -130,6 +137,7 @@ export async function renderProveedores(el, ctx) {
   paint();
   el.querySelector('#v-q').addEventListener('input', (e) => { fState.q = e.target.value; paint(); });
   el.querySelector('#v-status').addEventListener('change', (e) => { fState.status = e.target.value; paint(); });
+  el.querySelector('#btn-export-vendors-pdf').addEventListener('click', () => exportVendorsPdf({ wedding, vendors }));
   el.querySelector('#btn-new-vendor')?.addEventListener('click', () => openVendorModal(null));
 }
 

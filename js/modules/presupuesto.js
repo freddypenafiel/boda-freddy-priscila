@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { esc, toast, openModal, fmtMoney, fmtDate, todayISO } from '../ui.js';
 import { icon } from '../icons.js';
 import { CATEGORIES } from '../data/seed.js';
+import { exportBudgetPdf } from '../pdf.js';
 
 const PAY_METHODS = ['Transferencia', 'Deuna', 'Banco Pichincha', 'Efectivo', 'Tarjeta (sin diferir)'];
 
@@ -43,7 +44,10 @@ export async function renderPresupuesto(el, ctx) {
       <h1>Presupuesto y Pagos (USD)</h1>
       <p>Mantén un control claro entre lo estimado, el costo real y cada abono realizado, para empezar el matrimonio en paz y sin deudas.</p>
     </div>
-    ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-item">${icon('plus', 16)} Nuevo rubro</button>` : ''}
+    <div class="head-actions">
+      <button class="btn btn-outline" id="btn-export-budget-pdf">${icon('printer', 16)} Exportar PDF</button>
+      ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-item">${icon('plus', 16)} Nuevo rubro</button>` : ''}
+    </div>
   </header>
 
   <section class="kpi-strip">
@@ -125,6 +129,7 @@ export async function renderPresupuesto(el, ctx) {
     </div>
   </section>`;
 
+  el.querySelector('#btn-export-budget-pdf').addEventListener('click', () => exportBudgetPdf({ wedding, items, payments, vendors }));
   el.querySelector('#btn-new-item')?.addEventListener('click', () => openItemModal(null, vendors));
   el.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', () => {
     const it = items.find((x) => String(x.id) === String(b.dataset.edit));

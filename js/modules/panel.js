@@ -3,6 +3,7 @@ import * as db from '../db.js';
 import { esc, toast, openModal, fmtMoney, fmtDate, fmtTime, toLocalInput, fromLocalInput, todayISO } from '../ui.js';
 import { icon } from '../icons.js';
 import { STAGES, CATEGORIES, VERSES, ARTICLE_URL } from '../data/seed.js';
+import { exportFullWeddingPdf } from '../pdf.js';
 
 const STAGE_ORDER = Object.fromEntries(STAGES.map((s, i) => [s.key, i]));
 
@@ -92,7 +93,10 @@ export async function renderPanel(el, ctx) {
       <div class="countdown" id="countdown" data-date="${esc(wedding.wedding_date || '')}">
         ${['días', 'horas', 'min', 'seg'].map((l, i) => `<div class="cd-box"><span class="cd-num" data-i="${i}">--</span><span class="cd-label">${l}</span></div>`).join('')}
       </div>
-      ${ctx.isAdmin ? `<button class="btn btn-light" id="btn-edit-wedding">${icon('edit', 16)} Editar datos de la boda</button>` : ''}
+      <div class="btn-row">
+        <button class="btn btn-light" id="btn-export-summary">${icon('printer', 16)} Exportar resumen PDF</button>
+        ${ctx.isAdmin ? `<button class="btn btn-light" id="btn-edit-wedding">${icon('edit', 16)} Editar datos</button>` : ''}
+      </div>
     </div>
   </section>
 
@@ -248,8 +252,10 @@ export async function renderPanel(el, ctx) {
     });
   });
 
-  // ---- Editar datos de la boda ----
+  // ---- Editar datos y Exportar PDF ----
   el.querySelector('#btn-edit-wedding')?.addEventListener('click', () => editWedding(wedding));
+  el.querySelector('#btn-export-summary')?.addEventListener('click', () =>
+    exportFullWeddingPdf({ wedding, tasks, guests, team, budget, payments, songs }));
 
   return () => clearInterval(timer);
 }
