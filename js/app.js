@@ -27,17 +27,56 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+/* =================== Pantalla de Bienvenida Animada =================== */
+function showWelcomeIntro() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'welcome-screen';
+    overlay.innerHTML = `
+      <div class="welcome-particles" aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+      </div>
+      <div class="welcome-emblem">
+        <span class="welcome-halo"></span>
+        <span class="welcome-orbit"></span>
+        <span class="welcome-badge">${icon('rings', 48)}</span>
+      </div>
+      <div class="welcome-kicker">Bienvenidos a nuestra boda</div>
+      <h1 class="welcome-names">Freddy <span>&amp;</span> Priscila</h1>
+      <p class="welcome-date">26 · Febrero · 2027</p>
+      <p class="welcome-verse">“Una boda que honra a Jehová” · 1 Cor. 14:40</p>
+      <div class="welcome-bar"><span></span></div>
+      <p class="welcome-tap">Toca para entrar</p>`;
+    document.body.appendChild(overlay);
+
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      overlay.classList.add('leaving');
+      setTimeout(() => { overlay.remove(); resolve(); }, 460);
+    };
+    overlay.addEventListener('click', finish);
+    setTimeout(finish, 2100);
+  });
+}
+
 /* =================== Arranque =================== */
 async function boot() {
-  root.innerHTML = `<div class="splash"><div class="splash-ring">${icon('rings', 46)}</div><p>Cargando nuestra boda…</p></div>`;
+  const introPromise = showWelcomeIntro();
+  let initErr = null;
+  let member = null;
+
   try {
     await db.initDb();
+    if (db.getMode() === 'demo') member = db.auth.saved();
+    else member = await db.auth.verifySaved();
   } catch (e) {
-    return renderLogin(e.message);
+    initErr = e.message;
   }
-  if (db.getMode() === 'demo') return startApp(db.auth.saved());
 
-  const member = await db.auth.verifySaved();
+  await introPromise;
+  if (initErr) return renderLogin(initErr);
   if (!member) return renderLogin();
   startApp(member);
 }

@@ -12,7 +12,7 @@ Set-Location (Join-Path $root "android")
 & .\gradlew.bat assembleDebug --no-daemon
 
 $srcApk = Join-Path $root "android\app\build\outputs\apk\debug\app-debug.apk"
-$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v1.0.apk"
+$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v2.0.apk"
 if (Test-Path $srcApk) {
   Copy-Item $srcApk $dstApk -Force
   Write-Host "APK listo: $dstApk"
