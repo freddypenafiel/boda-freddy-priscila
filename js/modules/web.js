@@ -26,7 +26,7 @@ export async function renderWebBoda(el) {
     <div>
       <span class="eyebrow">${icon('globe', 14)} Invitación digital y RSVP</span>
       <h1>Web Pública de la Boda</h1>
-      <p>Esta es la página elegante que verán tus 100 invitados en su celular para conocer los detalles y confirmar su asistencia con su código personal.</p>
+      <p>Esta es la página elegante que verán tus <strong>${wedding.guest_target || 150} invitados</strong> en su celular para conocer los detalles y confirmar su asistencia con su código personal.</p>
     </div>
     <div class="head-actions">
       <button class="btn btn-outline" id="btn-copy-pub">${icon('copy', 16)} Copiar enlace general</button>

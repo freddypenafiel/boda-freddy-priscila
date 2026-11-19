@@ -1,11 +1,12 @@
-// Capa de datos: misma API para Supabase (nube) y modo demo (localStorage).
-// Acceso sencillo: solo Nombre + Teléfono (sin correo ni contraseña).
+// Capa de datos: Supabase (nube + Realtime + Presence) y modo demo (localStorage).
+// Acceso: Nombre + Teléfono con solicitudes de aprobación en vivo en 1 clic.
 import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_CDN } from './config.js';
 import { buildSeed } from './data/seed.js';
 
-const DEMO_KEY = 'fp_boda_demo_v4';
+const DEMO_KEY = 'fp_boda_demo_v5';
 const MODE_KEY = 'fp_boda_mode';
 const SESSION_KEY = 'fp_boda_phone_session';
+export const PENDING_PREFIX = '__PENDING__|';
 const REALTIME_TABLES = [
   'wedding', 'tasks', 'guests', 'guest_groups', 'team_roles',
   'songs', 'budget_items', 'payments', 'vendors', 'seating_tables', 'allowed_phones',
@@ -15,14 +16,18 @@ let mode = null;     // 'cloud' | 'demo'
 let sb = null;       // cliente Supabase
 let demo = null;     // datos demo en memoria
 let channel = null;
+let presenceCh = null;
+let currentPresenceMeta = null;
+let onlineUsers = [];
 const listeners = new Set();
+const presenceListeners = new Set();
 
 export const uid = () =>
   globalThis.crypto?.randomUUID ? crypto.randomUUID() : `id-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
 const randCode = () => Math.random().toString(36).slice(2, 12).padEnd(10, '7');
 
-/* ---------------- Normalización de teléfono ---------------- */
+/* ---------------- Utilidades de teléfono y solicitudes ---------------- */
 export function normalizePhone(raw) {
   let d = String(raw || '').replace(/\D/g, '');
   if (!d) return '';
@@ -35,6 +40,14 @@ export function formatPhone(raw) {
   if (!d) return '';
   if (d.startsWith('593') && d.length === 12) return '0' + d.slice(3);
   return d;
+}
+
+export const isPendingAccess = (row) => Boolean(row && typeof row.area === 'string' && row.area.startsWith(PENDING_PREFIX));
+
+export function pendingRequestedAt(row) {
+  if (!isPendingAccess(row)) return null;
+  const iso = row.area.slice(PENDING_PREFIX.length);
+  return iso || row.created_at || null;
 }
 
 /* ---------------- Modo ---------------- */
@@ -85,7 +98,7 @@ function loadDemo() {
   }
   s.allowed_phones = [
     { phone: '593999999999', display_name: 'Freddy (demo)', role: 'admin', area: 'Novios' },
-    { phone: '593988888888', display_name: 'Priscila', role: 'admin', area: 'Novios' },
+    { phone: '593988888888', display_name: 'Priscila', role: 'helper', area: `${PENDING_PREFIX}${new Date().toISOString()}` },
   ];
   localStorage.setItem(DEMO_KEY, JSON.stringify(s));
   return s;
@@ -102,7 +115,7 @@ window.addEventListener('storage', (e) => {
   if (mode === 'demo' && e.key === DEMO_KEY) { demo = loadDemo(); emit('*'); }
 });
 
-/* ---------------- Sesión sencilla (Nombre + Teléfono) ---------------- */
+/* ---------------- Sesión sencilla + Solicitudes de acceso en vivo ---------------- */
 function readSavedSession() {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -117,9 +130,15 @@ function saveSession(rec) {
 
 export const auth = {
   saved() {
-    if (mode === 'demo') return demo.allowed_phones[0];
+    if (mode === 'demo') return demo.allowed_phones.find((x) => !isPendingAccess(x)) || demo.allowed_phones[0];
     return readSavedSession();
   },
+  /**
+   * Intenta iniciar sesión con Nombre + Teléfono.
+   * - Si es el primer usuario o ya está aprobado: devuelve { status: 'ok', member }.
+   * - Si no está autorizado aún: registra automáticamente una solicitud pendiente
+   *   para que Freddy pueda aprobarlo con 1 clic en tiempo real y devuelve { status: 'pending', name, phone }.
+   */
   async login(name, phone) {
     const cleanPhone = normalizePhone(phone);
     if (cleanPhone.length < 7) throw new Error('Ingresa un número de teléfono válido (al menos 7 dígitos).');
@@ -128,31 +147,41 @@ export const auth = {
 
     if (mode === 'demo') {
       const rec = { phone: cleanPhone, display_name: cleanName, role: 'admin', area: 'Novios' };
-      return rec;
+      return { status: 'ok', member: rec };
     }
 
     const { data, error } = await sb.rpc('login_with_phone', { p_name: cleanName, p_phone: cleanPhone });
     if (error) {
       if (/login_with_phone/i.test(error.message)) {
-        throw new Error('Falta ejecutar supabase/update_simple_phone.sql en Supabase (SQL Editor).');
+        throw new Error('Falta ejecutar supabase/update_simple_phone.sql en Supabase.');
       }
       throw new Error(error.message);
     }
     const row = Array.isArray(data) ? data[0] : data;
-    if (!row || !row.phone) {
-      saveSession(null);
-      return null; // No autorizado aún
+
+    if (row && row.phone && !isPendingAccess(row)) {
+      saveSession(row);
+      return { status: 'ok', member: row };
     }
-    saveSession(row);
-    return row;
+
+    // No autorizado todavía → registrar o refrescar solicitud pendiente en vivo
+    const pendingRec = {
+      phone: cleanPhone,
+      display_name: cleanName,
+      role: 'helper',
+      area: `${PENDING_PREFIX}${new Date().toISOString()}`,
+    };
+    await sb.from('allowed_phones').upsert(pendingRec, { onConflict: 'phone' });
+    saveSession(null);
+    return { status: 'pending', name: cleanName, phone: cleanPhone };
   },
   async verifySaved() {
-    if (mode === 'demo') return demo.allowed_phones[0];
+    if (mode === 'demo') return this.saved();
     const saved = readSavedSession();
     if (!saved?.phone) return null;
     try {
       const { data, error } = await sb.from('allowed_phones').select('*').eq('phone', saved.phone).maybeSingle();
-      if (error || !data) {
+      if (error || !data || isPendingAccess(data)) {
         saveSession(null);
         return null;
       }
@@ -162,8 +191,117 @@ export const auth = {
       return saved;
     }
   },
+  /** Escucha en tiempo real si Freddy aprueba o rechaza esta solicitud pendiente. */
+  watchApproval(phone, { onApproved, onRejected }) {
+    const cleanPhone = normalizePhone(phone);
+    if (mode !== 'cloud' || !sb) return () => {};
+    let stopped = false;
+
+    const checkNow = async () => {
+      if (stopped) return;
+      const { data } = await sb.from('allowed_phones').select('*').eq('phone', cleanPhone).maybeSingle();
+      if (!data) {
+        onRejected?.();
+      } else if (!isPendingAccess(data)) {
+        saveSession(data);
+        onApproved?.(data);
+      }
+    };
+
+    const ch = sb.channel(`wait-${cleanPhone}-${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'allowed_phones', filter: `phone=eq.${cleanPhone}` }, checkNow)
+      .subscribe();
+    const poll = setInterval(checkNow, 4000);
+
+    return () => {
+      stopped = true;
+      clearInterval(poll);
+      sb.removeChannel(ch);
+    };
+  },
   async signOut() {
+    presence.stop();
     saveSession(null);
+  },
+};
+
+/* ---------------- Presencia en tiempo real ("Quiénes están conectados") ---------------- */
+function emitPresence() {
+  presenceListeners.forEach((cb) => { try { cb(onlineUsers); } catch (e) { console.error(e); } });
+}
+
+export const presence = {
+  getOnline: () => onlineUsers,
+  onChange(cb) {
+    presenceListeners.add(cb);
+    return () => presenceListeners.delete(cb);
+  },
+  start(member, routeLabel = 'Mi boda') {
+    const device = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) ? 'Celular' : 'PC';
+    currentPresenceMeta = {
+      phone: member?.phone || 'demo',
+      name: member?.display_name || formatPhone(member?.phone) || 'Usuario',
+      role: member?.role || 'helper',
+      area: member?.area || '',
+      device,
+      route: routeLabel,
+      since: new Date().toISOString(),
+    };
+
+    if (mode !== 'cloud' || !sb) {
+      onlineUsers = [currentPresenceMeta];
+      emitPresence();
+      return;
+    }
+
+    if (presenceCh) {
+      sb.removeChannel(presenceCh);
+      presenceCh = null;
+    }
+
+    presenceCh = sb.channel('boda-online-presence', {
+      config: { presence: { key: currentPresenceMeta.phone } },
+    });
+
+    const syncOnline = () => {
+      const state = presenceCh.presenceState();
+      const list = [];
+      for (const entries of Object.values(state)) {
+        if (entries && entries.length) list.push(entries[entries.length - 1]);
+      }
+      list.sort((a, b) => (a.role === 'admin' ? -1 : 1) - (b.role === 'admin' ? -1 : 1) || a.name.localeCompare(b.name, 'es'));
+      onlineUsers = list;
+      emitPresence();
+    };
+
+    presenceCh
+      .on('presence', { event: 'sync' }, syncOnline)
+      .on('presence', { event: 'join' }, syncOnline)
+      .on('presence', { event: 'leave' }, syncOnline)
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED' && currentPresenceMeta) {
+          await presenceCh.track(currentPresenceMeta);
+        }
+      });
+  },
+  async setRoute(routeLabel) {
+    if (!currentPresenceMeta) return;
+    currentPresenceMeta = { ...currentPresenceMeta, route: routeLabel };
+    if (mode === 'cloud' && presenceCh) {
+      try { await presenceCh.track(currentPresenceMeta); } catch { /* noop */ }
+    } else {
+      onlineUsers = [currentPresenceMeta];
+      emitPresence();
+    }
+  },
+  stop() {
+    if (presenceCh && sb) {
+      try { sb.removeChannel(presenceCh); } catch { /* noop */ }
+    }
+    presenceCh = null;
+    currentPresenceMeta = null;
+    onlineUsers = [];
+    emitPresence();
   },
 };
 
@@ -237,11 +375,16 @@ export async function remove(table, id) {
   emit(table);
 }
 
-/* ---------------- Teléfonos autorizados (PK: phone) ---------------- */
+/* ---------------- Teléfonos autorizados y aprobación en 1 clic ---------------- */
 export async function upsertAllowedPhone({ phone, display_name, role, area }) {
   const clean = normalizePhone(phone);
   if (clean.length < 7) throw new Error('Ingresa un número de teléfono válido.');
-  const rec = { phone: clean, display_name: display_name || formatPhone(clean), role: role || 'helper', area: area || null };
+  const rec = {
+    phone: clean,
+    display_name: display_name || formatPhone(clean),
+    role: role || 'helper',
+    area: (area && !String(area).startsWith(PENDING_PREFIX)) ? area : (role === 'admin' ? 'Novios' : 'Ayudante'),
+  };
   if (mode === 'demo') {
     const rows = (demo.allowed_phones ||= []);
     const i = rows.findIndex((r) => r.phone === clean);
@@ -254,6 +397,15 @@ export async function upsertAllowedPhone({ phone, display_name, role, area }) {
   if (error) throw new Error(error.message);
   emit('allowed_phones');
   return data;
+}
+
+export async function approvePendingPhone(phone, displayName, role = 'admin') {
+  return upsertAllowedPhone({
+    phone,
+    display_name: displayName,
+    role,
+    area: role === 'admin' ? 'Novios / Admin' : 'Ayudante',
+  });
 }
 
 export async function removeAllowedPhone(phone) {

@@ -94,13 +94,13 @@ const TASKS = [
   ['s2', 'Averiguar requisitos y agendar turno en el Registro Civil de Azogues', 'legal', 3, 'Revisar fechas disponibles, tasas y si será en la sede o en otro lugar.'],
   ['s2', 'Reunir los documentos para el matrimonio civil', 'legal', 3, 'Cédulas vigentes, certificados y demás requisitos.'],
   ['s2', 'Elegir a los 2 testigos legales', 'legal', 3, 'Mayores de edad y con documentos en regla.'],
-  ['s2', 'Reservar el local de recepción para 100 invitados', 'recepcion', 12, 'Revisar capacidad, parqueadero, baños, acústica y clima.'],
+  ['s2', 'Reservar el local de recepción para 150 invitados', 'recepcion', 12, 'Revisar capacidad, parqueadero, baños, acústica y clima.'],
   ['s2', 'Elegir al Director del Banquete', 'equipo', 8, 'Un hermano maduro y de confianza.'],
   ['s2', 'Confirmar las parejas de damas y caballeros', 'equipo', 13, 'Nancy y Manuel, Nuria y Darío, Lady e Isaac, Diana y Kevin.', 'hecho'],
   ['s2', 'Definir el código de vestimenta: verde salvia y beige', 'vestimenta', 6, 'Damas con vestido verde salvia; caballeros con camisa blanca, fajín y corbatín verde salvia y pantalón beige.', 'hecho'],
   ['s2', 'Elegir las canciones del mix de baile (~8 min)', 'musica', 10, 'Rock Around The Clock, Tu cariñito, Bailando bachata y Te voy a amar.', 'hecho'],
-  ['s2', 'Hacer la lista preliminar de 100 invitados', 'invitados', 12, 'Agrupar por familia de Freddy, familia de Priscila, congregación y amigos.'],
-  ['s2', 'Cotizar el banquete para 100 platos', 'proveedores', 5, 'Pedir al menos 3 cotizaciones.'],
+  ['s2', 'Hacer la lista preliminar de 150 invitados', 'invitados', 12, 'Agrupar por familia de Freddy, familia de Priscila, congregación y amigos.'],
+  ['s2', 'Cotizar el banquete para 150 platos', 'proveedores', 5, 'Pedir al menos 3 cotizaciones.'],
 
   ['s3', 'Conseguir el vestido de la novia y el traje verde salvia del novio', 'vestimenta', 6, 'Elegantes, modestos y dentro del presupuesto.'],
   ['s3', 'Contratar fotografía y video', 'proveedores', 13, 'Recordar las pautas de respeto en el Salón del Reino.'],
@@ -144,7 +144,7 @@ export const TEAM_ROLES = [
   { role: 'Orador del discurso', person: null, partner: null, notes: 'Anciano de congregación' },
   { role: 'Audio y música', person: null, partner: null, notes: '' },
   { role: 'Fotografía y video', person: null, partner: null, notes: '' },
-  { role: 'Acomodadores', person: null, partner: null, notes: 'Recepción de los 100 invitados' },
+  { role: 'Acomodadores', person: null, partner: null, notes: 'Recepción de los 150 invitados' },
 ].map((r, i) => ({ ...r, sort: i + 1 }));
 
 export const SONGS = [
@@ -163,17 +163,17 @@ export const GUEST_GROUPS = [
 
 export const SEATING_TABLES = [
   { name: 'Mesa Principal (Novios y Padres)', capacity: 8, sort: 1 },
-  ...Array.from({ length: 10 }, (_, i) => ({ name: `Mesa ${i + 1}`, capacity: 10, sort: i + 2 })),
+  ...Array.from({ length: 15 }, (_, i) => ({ name: `Mesa ${i + 1}`, capacity: 10, sort: i + 2 })),
 ];
 
 export const BUDGET_ITEMS = [
-  { category: 'recepcion', concept: 'Banquete (100 platos + bebidas sin alcohol)', estimated: 1800, actual: null, notes: 'Plato servido a la mesa' },
-  { category: 'recepcion', concept: 'Alquiler de local y mobiliario', estimated: 700, actual: null, notes: 'Mesas, sillas vestidas y mantelería' },
+  { category: 'recepcion', concept: 'Banquete (150 platos + bebidas sin alcohol)', estimated: 2500, actual: null, notes: 'Plato servido a la mesa' },
+  { category: 'recepcion', concept: 'Alquiler de local y mobiliario (150 personas)', estimated: 850, actual: null, notes: '15 mesas, sillas vestidas y mantelería' },
   { category: 'legal', concept: 'Registro Civil (tasas y trámites)', estimated: 100, actual: null, notes: 'Registro Civil de Azogues' },
-  { category: 'proveedores', concept: 'Torta y postre para 100 invitados', estimated: 250, actual: null, notes: '' },
+  { category: 'proveedores', concept: 'Torta y postre para 150 invitados', estimated: 320, actual: null, notes: '' },
   { category: 'musica', concept: 'Fotografía, video y equipo de sonido', estimated: 550, actual: null, notes: 'Micrófonos y cobertura' },
   { category: 'vestimenta', concept: 'Vestido de novia y traje verde salvia', estimated: 600, actual: null, notes: 'Modestos y dentro del presupuesto' },
-  { category: 'presupuesto', concept: 'Fondo para imprevistos (10 %)', estimated: 400, actual: null, notes: 'Reserva de seguridad (cero deudas)' },
+  { category: 'presupuesto', concept: 'Fondo para imprevistos (10 %)', estimated: 490, actual: null, notes: 'Reserva de seguridad (cero deudas)' },
 ];
 
 export const SAMPLE_GUESTS = [
@@ -203,8 +203,8 @@ export const WEDDING = {
   civil_place: null,
   speaker: null,
   banquet_director: null,
-  guest_target: 100,
-  budget_target: 4400,
+  guest_target: 150,
+  budget_target: 5410,
   dress_colors: 'Verde salvia y beige',
   notes: null,
 };

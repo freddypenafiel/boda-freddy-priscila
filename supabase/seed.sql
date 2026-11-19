@@ -7,7 +7,7 @@
 
 -- Datos de la boda
 insert into public.wedding (id, couple_names, groom_name, bride_name, wedding_date, time_confirmed, city, kingdom_hall, kingdom_hall_address, reception_venue, reception_address, civil_date, civil_place, speaker, banquet_director, guest_target, budget_target, dress_colors, notes) values
-  (1, 'Freddy & Priscila', 'Freddy Peñafiel', 'Priscila Dumancela', '2027-02-26T15:00:00-05:00', false, 'Azogues, Cañar', null, null, null, null, null, null, null, null, 100, 4400, 'Verde salvia y beige', null)
+  (1, 'Freddy & Priscila', 'Freddy Peñafiel', 'Priscila Dumancela', '2027-02-26T15:00:00-05:00', false, 'Azogues, Cañar', null, null, null, null, null, null, null, null, 150, 5410, 'Verde salvia y beige', null)
 on conflict (id) do nothing;
 
 -- Principios bíblicos
@@ -51,13 +51,13 @@ do $$ begin
       ('Averiguar requisitos y agendar turno en el Registro Civil de Azogues', 'Revisar fechas disponibles, tasas y si será en la sede o en otro lugar.', 's2', 'legal', 3, null, '2026-12-18', 'pendiente', 8),
       ('Reunir los documentos para el matrimonio civil', 'Cédulas vigentes, certificados y demás requisitos.', 's2', 'legal', 3, null, '2026-12-18', 'pendiente', 9),
       ('Elegir a los 2 testigos legales', 'Mayores de edad y con documentos en regla.', 's2', 'legal', 3, null, '2026-12-18', 'pendiente', 10),
-      ('Reservar el local de recepción para 100 invitados', 'Revisar capacidad, parqueadero, baños, acústica y clima.', 's2', 'recepcion', 12, null, '2026-12-18', 'pendiente', 11),
+      ('Reservar el local de recepción para 150 invitados', 'Revisar capacidad, parqueadero, baños, acústica y clima.', 's2', 'recepcion', 12, null, '2026-12-18', 'pendiente', 11),
       ('Elegir al Director del Banquete', 'Un hermano maduro y de confianza.', 's2', 'equipo', 8, null, '2026-12-18', 'pendiente', 12),
       ('Confirmar las parejas de damas y caballeros', 'Nancy y Manuel, Nuria y Darío, Lady e Isaac, Diana y Kevin.', 's2', 'equipo', 13, null, '2026-12-18', 'hecho', 13),
       ('Definir el código de vestimenta: verde salvia y beige', 'Damas con vestido verde salvia; caballeros con camisa blanca, fajín y corbatín verde salvia y pantalón beige.', 's2', 'vestimenta', 6, null, '2026-12-18', 'hecho', 14),
       ('Elegir las canciones del mix de baile (~8 min)', 'Rock Around The Clock, Tu cariñito, Bailando bachata y Te voy a amar.', 's2', 'musica', 10, null, '2026-12-18', 'hecho', 15),
-      ('Hacer la lista preliminar de 100 invitados', 'Agrupar por familia de Freddy, familia de Priscila, congregación y amigos.', 's2', 'invitados', 12, null, '2026-12-18', 'pendiente', 16),
-      ('Cotizar el banquete para 100 platos', 'Pedir al menos 3 cotizaciones.', 's2', 'proveedores', 5, null, '2026-12-18', 'pendiente', 17),
+      ('Hacer la lista preliminar de 150 invitados', 'Agrupar por familia de Freddy, familia de Priscila, congregación y amigos.', 's2', 'invitados', 12, null, '2026-12-18', 'pendiente', 16),
+      ('Cotizar el banquete para 150 platos', 'Pedir al menos 3 cotizaciones.', 's2', 'proveedores', 5, null, '2026-12-18', 'pendiente', 17),
       ('Conseguir el vestido de la novia y el traje verde salvia del novio', 'Elegantes, modestos y dentro del presupuesto.', 's3', 'vestimenta', 6, null, '2027-01-17', 'pendiente', 18),
       ('Contratar fotografía y video', 'Recordar las pautas de respeto en el Salón del Reino.', 's3', 'proveedores', 13, null, '2027-01-17', 'pendiente', 19),
       ('Coordinar el sonido y la lista musical aprobada', 'Revisar letras y descargar la música para usarla sin internet.', 's3', 'musica', 10, null, '2027-01-17', 'pendiente', 20),
@@ -95,7 +95,7 @@ do $$ begin
       ('Orador del discurso', null, null, 'Anciano de congregación', 6),
       ('Audio y música', null, null, '', 7),
       ('Fotografía y video', null, null, '', 8),
-      ('Acomodadores', null, null, 'Recepción de los 100 invitados', 9);
+      ('Acomodadores', null, null, 'Recepción de los 150 invitados', 9);
   end if;
 end $$;
 
@@ -124,7 +124,12 @@ do $$ begin
       ('Mesa 7', 10, 8),
       ('Mesa 8', 10, 9),
       ('Mesa 9', 10, 10),
-      ('Mesa 10', 10, 11);
+      ('Mesa 10', 10, 11),
+      ('Mesa 11', 10, 12),
+      ('Mesa 12', 10, 13),
+      ('Mesa 13', 10, 14),
+      ('Mesa 14', 10, 15),
+      ('Mesa 15', 10, 16);
   end if;
 end $$;
 
@@ -132,12 +137,12 @@ end $$;
 do $$ begin
   if not exists (select 1 from public.budget_items) then
     insert into public.budget_items (category, concept, estimated, actual, notes) values
-      ('recepcion', 'Banquete (100 platos + bebidas sin alcohol)', 1800, null, 'Plato servido a la mesa'),
-      ('recepcion', 'Alquiler de local y mobiliario', 700, null, 'Mesas, sillas vestidas y mantelería'),
+      ('recepcion', 'Banquete (150 platos + bebidas sin alcohol)', 2500, null, 'Plato servido a la mesa'),
+      ('recepcion', 'Alquiler de local y mobiliario (150 personas)', 850, null, '15 mesas, sillas vestidas y mantelería'),
       ('legal', 'Registro Civil (tasas y trámites)', 100, null, 'Registro Civil de Azogues'),
-      ('proveedores', 'Torta y postre para 100 invitados', 250, null, ''),
+      ('proveedores', 'Torta y postre para 150 invitados', 320, null, ''),
       ('musica', 'Fotografía, video y equipo de sonido', 550, null, 'Micrófonos y cobertura'),
       ('vestimenta', 'Vestido de novia y traje verde salvia', 600, null, 'Modestos y dentro del presupuesto'),
-      ('presupuesto', 'Fondo para imprevistos (10 %)', 400, null, 'Reserva de seguridad (cero deudas)');
+      ('presupuesto', 'Fondo para imprevistos (10 %)', 490, null, 'Reserva de seguridad (cero deudas)');
   end if;
 end $$;

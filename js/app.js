@@ -1,4 +1,5 @@
-// Punto de entrada: arranque, acceso sencillo (Nombre + Teléfono), estructura y enrutador.
+// Punto de entrada: arranque, acceso en vivo (Nombre + Teléfono), presencia online,
+// aprobación de solicitudes en 1 clic, navegación nativa móvil y enrutador.
 import * as db from './db.js';
 import { esc, toast } from './ui.js';
 import { icon } from './icons.js';
@@ -8,8 +9,12 @@ const root = document.getElementById('app');
 let ctx = null;
 let cleanup = null;
 let unsubscribe = null;
+let unsubPresence = null;
+let unsubWait = null;
 let currentKey = null;
 let deferredInstall = null;
+let pendingList = [];
+let knownPendingPhones = new Set();
 
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
@@ -24,7 +29,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 /* =================== Arranque =================== */
 async function boot() {
-  root.innerHTML = `<div class="splash">${icon('rings', 46)}<p>Cargando nuestra boda…</p></div>`;
+  root.innerHTML = `<div class="splash"><div class="splash-ring">${icon('rings', 46)}</div><p>Cargando nuestra boda…</p></div>`;
   try {
     await db.initDb();
   } catch (e) {
@@ -41,7 +46,7 @@ async function boot() {
 function renderLogin(errorMsg = '') {
   teardown();
   root.innerHTML = `
-  <div class="auth">
+  <div class="auth fade-in">
     <section class="auth-hero">
       <div class="auth-deco" aria-hidden="true">${icon('leaf', 260)}</div>
       <span class="eyebrow light">${icon('heart', 14)} Organizador de boda</span>
@@ -50,7 +55,7 @@ function renderLogin(errorMsg = '') {
       <blockquote>“Háganlo todo de forma digna y ordenada”<cite>— 1 Corintios 14:40</cite></blockquote>
       <ul class="auth-feats">
         <li>${icon('book', 18)} Organización basada en principios bíblicos</li>
-        <li>${icon('clipboard', 18)} Tareas, invitados, mesas y presupuesto</li>
+        <li>${icon('clipboard', 18)} Tareas, 150 invitados, mesas y presupuesto</li>
         <li>${icon('cloud', 18)} Sincronizado en tiempo real entre los dos</li>
       </ul>
     </section>
@@ -58,7 +63,7 @@ function renderLogin(errorMsg = '') {
       <div class="auth-card">
         <span class="auth-logo">${icon('rings', 30)}</span>
         <h2>Bienvenidos</h2>
-        <p class="muted" style="margin-bottom:18px;">Ingresa solo con tu nombre y tu número de teléfono (sin correo ni contraseña).</p>
+        <p class="muted" style="margin-bottom:18px;">Ingresa solo con tu nombre y teléfono (sin correo ni contraseña).</p>
         <form id="auth-form" novalidate>
           <label class="field">
             <span>Tu nombre</span>
@@ -73,7 +78,7 @@ function renderLogin(errorMsg = '') {
         </form>
         <div class="divider"><span>o</span></div>
         <button class="btn btn-outline btn-block" id="btn-demo">${icon('device', 16)} Explorar en modo demo</button>
-        <p class="fine">Solo los teléfonos autorizados por Freddy y Priscila pueden ver los datos reales en la nube.</p>
+        <p class="fine">Si aún no estás autorizado, tu solicitud llegará al instante a Freddy para aprobarte con un toque.</p>
       </div>
     </section>
   </div>`;
@@ -96,11 +101,12 @@ function renderLogin(errorMsg = '') {
         db.setPreferredMode('cloud');
         await db.initDb('cloud');
       }
-      const member = await db.auth.login(name, phone);
-      if (!member) {
-        renderNoAccess(name, db.formatPhone(phone));
+      const res = await db.auth.login(name, phone);
+      if (res.status === 'ok') {
+        toast(`¡Bienvenid@, ${res.member.display_name}! 💍`);
+        startApp(res.member);
       } else {
-        startApp(member);
+        renderPendingWait(res.name, res.phone);
       }
     } catch (err) {
       showErr(err.message);
@@ -116,35 +122,60 @@ function renderLogin(errorMsg = '') {
   });
 }
 
-function renderNoAccess(name = '', phoneLabel = '') {
+/* =================== Espera en vivo hasta aprobación 1-clic =================== */
+function renderPendingWait(name, phone) {
   teardown();
+  const prettyPhone = db.formatPhone(phone);
   root.innerHTML = `
-  <div class="center-screen">
-    <div class="auth-card">
-      <span class="auth-logo warn">${icon('lock', 30)}</span>
-      <h2>Número aún no autorizado</h2>
-      <p class="muted" style="margin-bottom:8px;"><strong>${esc(name)}</strong> · ${esc(phoneLabel)}</p>
-      <p class="muted">Pide a Freddy o a Priscila que agreguen tu número en <strong>Equipo → Accesos al Sistema</strong> y luego vuelve a intentar.</p>
-      <button class="btn btn-primary btn-block" id="btn-retry" style="margin-top:14px;">${icon('refresh', 16)} Ya me autorizaron, entrar</button>
-      <button class="btn btn-ghost btn-block" id="btn-back">${icon('arrow', 16)} Cambiar número</button>
+  <div class="center-screen fade-in">
+    <div class="auth-card wait-card">
+      <div class="wait-pulse">
+        <span class="wait-ring"></span>
+        <span class="auth-logo">${icon('clock', 30)}</span>
+      </div>
+      <h2>Solicitud enviada en vivo</h2>
+      <p class="wait-who"><strong>${esc(name)}</strong> · ${esc(prettyPhone)}</p>
+      <p class="muted">Acabamos de avisar a Freddy en su pantalla. En cuanto toque <strong>“Aprobar”</strong>, entrarás automáticamente aquí sin tener que hacer nada más.</p>
+      <div class="wait-live-pill"><span class="live-dot"></span> Escuchando aprobación en tiempo real…</div>
+      <button class="btn btn-outline btn-block" id="btn-check-now" style="margin-top:16px;">${icon('refresh', 15)} Comprobar ahora</button>
+      <button class="btn btn-ghost btn-block" id="btn-back">${icon('arrow', 15)} Cambiar número</button>
     </div>
   </div>`;
-  root.querySelector('#btn-retry').addEventListener('click', async () => {
+
+  unsubWait = db.auth.watchApproval(phone, {
+    onApproved: (member) => {
+      toast(`¡Acceso aprobado! Bienvenid@, ${member.display_name} 💍`);
+      startApp(member);
+    },
+    onRejected: () => {
+      renderLogin('Tu solicitud no fue aprobada. Si fue un error, vuelve a intentarlo.');
+    },
+  });
+
+  root.querySelector('#btn-check-now').addEventListener('click', async () => {
     try {
-      const m = await db.auth.login(name, phoneLabel);
-      if (m) startApp(m);
-      else toast('Ese número todavía no está autorizado.', 'error');
+      const res = await db.auth.login(name, phone);
+      if (res.status === 'ok') {
+        toast(`¡Acceso aprobado! Bienvenid@, ${res.member.display_name} 💍`);
+        startApp(res.member);
+      } else {
+        toast('Aún esperando aprobación de Freddy…');
+      }
     } catch (e) { toast(e.message, 'error'); }
   });
+
   root.querySelector('#btn-back').addEventListener('click', () => renderLogin());
 }
 
-/* =================== App =================== */
+/* =================== App Principal =================== */
 function startApp(member) {
   teardown();
   const mode = db.getMode();
   ctx = { member, isAdmin: member?.role === 'admin', mode };
   const name = member?.display_name || db.formatPhone(member?.phone) || 'Usuario';
+
+  const PRIMARY_MOBILE = ['panel', 'tareas', 'invitados', 'mesas'];
+  const MORE_MOBILE = ROUTES.filter((r) => !PRIMARY_MOBILE.includes(r.key));
 
   root.innerHTML = `
   <div class="app">
@@ -154,26 +185,85 @@ function startApp(member) {
         <span class="brand-text"><strong>Freddy &amp; Priscila</strong><small>Una boda que honra a Jehová</small></span>
       </a>
       <div class="topbar-right">
-        <button class="chip-btn" id="btn-install" ${deferredInstall ? '' : 'hidden'} title="Instalar app en tu celular o PC">${icon('install', 14)} Instalar</button>
-        <span class="mode-badge mode-${mode}" title="${mode === 'cloud' ? 'Datos sincronizados con Supabase' : 'Datos guardados solo en este dispositivo'}">
-          ${icon(mode === 'cloud' ? 'cloud' : 'device', 14)} <span>${mode === 'cloud' ? 'En la nube' : 'Modo demo'}</span></span>
+        <button class="live-pill" id="btn-live-center" title="Ver conectados ahora y solicitudes de acceso">
+          <span class="live-dot"></span>
+          <span id="live-count">1 en línea</span>
+        </button>
+        ${ctx.isAdmin ? `<button class="icon-btn bell-btn" id="btn-bell" title="Solicitudes de acceso">
+          ${icon('bell', 18)}
+          <span class="bell-badge" id="bell-badge" hidden>0</span>
+        </button>` : ''}
+        <button class="chip-btn" id="btn-install" ${deferredInstall ? '' : 'hidden'} title="Instalar app">${icon('install', 14)} Instalar</button>
+        <span class="mode-badge mode-${mode}" title="${mode === 'cloud' ? 'Sincronizado en tiempo real con Supabase' : 'Modo demo local'}">
+          ${icon(mode === 'cloud' ? 'cloud' : 'device', 14)} <span>${mode === 'cloud' ? 'En la nube' : 'Demo'}</span>
+        </span>
         ${mode === 'demo' ? `<button class="icon-btn" id="btn-reset" title="Reiniciar datos demo">${icon('refresh', 18)}</button>` : ''}
         <div class="user-chip">
           <span class="avatar">${esc(name.trim().charAt(0).toUpperCase())}</span>
-          <span class="user-meta"><strong>${esc(name)}</strong><small>${ctx.isAdmin ? 'Administrador' : 'Ayudante'}</small></span>
+          <span class="user-meta"><strong>${esc(name)}</strong><small>${ctx.isAdmin ? 'Admin' : 'Ayudante'}</small></span>
         </div>
         <button class="icon-btn" id="btn-logout" title="Salir">${icon('logout', 18)}</button>
       </div>
     </header>
+
+    <div id="live-request-bar" class="request-banner-wrap"></div>
+
     <nav class="modnav" aria-label="Módulos">
       <div class="modnav-inner">
         ${ROUTES.map((r) => `<a class="modnav-item" href="#/${r.key}" data-key="${r.key}">
-          ${icon(r.icon, 24)}<span>${esc(r.label)}</span></a>`).join('')}
+          ${icon(r.icon, 23)}<span>${esc(r.label)}</span></a>`).join('')}
       </div>
     </nav>
+
     <main id="view" class="view" tabindex="-1"></main>
+
     <footer class="app-foot">“Ya sea que coman o beban o hagan cualquier otra cosa, háganlo todo para la gloria de Dios.” — 1 Corintios 10:31</footer>
+
+    <!-- Barra inferior nativa para celulares / APK Android -->
+    <nav class="bottom-nav" aria-label="Navegación móvil">
+      ${PRIMARY_MOBILE.map((k) => {
+        const r = ROUTES.find((x) => x.key === k);
+        return `<a class="bnav-item" href="#/${r.key}" data-key="${r.key}">${icon(r.icon, 21)}<span>${esc(r.label)}</span></a>`;
+      }).join('')}
+      <button type="button" class="bnav-item" id="btn-more-sheet">${icon('grid', 21)}<span>Más</span></button>
+    </nav>
+
+    <div class="sheet-backdrop" id="more-sheet" hidden>
+      <div class="sheet">
+        <div class="sheet-handle"></div>
+        <header class="sheet-head">
+          <h3>Más módulos</h3>
+          <button type="button" class="icon-btn" id="btn-close-sheet">${icon('x', 18)}</button>
+        </header>
+        <div class="sheet-grid">
+          ${MORE_MOBILE.map((r) => `<a class="sheet-tile" href="#/${r.key}" data-key="${r.key}">
+            <span class="sheet-ico">${icon(r.icon, 22)}</span>
+            <strong>${esc(r.label)}</strong>
+          </a>`).join('')}
+        </div>
+      </div>
+    </div>
   </div>`;
+
+  // Presencia en tiempo real
+  db.presence.start(member, 'Mi boda');
+  unsubPresence = db.presence.onChange(updateLiveUi);
+  updateLiveUi(db.presence.getOnline());
+
+  // Revisar solicitudes pendientes al iniciar (solo Admin)
+  if (ctx.isAdmin) refreshPendingRequests(true);
+
+  // Abrir Centro de Conectados y Solicitudes
+  root.querySelector('#btn-live-center').addEventListener('click', () => openLiveCenterModal());
+  root.querySelector('#btn-bell')?.addEventListener('click', () => openLiveCenterModal('pending'));
+
+  // Bottom sheet móvil
+  const sheet = root.querySelector('#more-sheet');
+  const openSheet = () => { sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open')); };
+  const closeSheet = () => { sheet.classList.remove('open'); setTimeout(() => { sheet.hidden = true; }, 220); };
+  root.querySelector('#btn-more-sheet').addEventListener('click', openSheet);
+  root.querySelector('#btn-close-sheet').addEventListener('click', closeSheet);
+  sheet.addEventListener('click', (e) => { if (e.target === sheet || e.target.closest('.sheet-tile')) closeSheet(); });
 
   root.querySelector('#btn-install')?.addEventListener('click', async () => {
     if (!deferredInstall) return;
@@ -190,21 +280,187 @@ function startApp(member) {
     if (mode === 'demo') db.setPreferredMode('cloud');
     renderLogin();
   });
+
   root.querySelector('#btn-reset')?.addEventListener('click', () => {
-    if (confirm('¿Reiniciar los datos de demostración? Se perderán los cambios hechos en modo demo.')) {
+    if (confirm('¿Reiniciar los datos de demostración?')) {
       db.resetDemo();
       toast('Datos demo reiniciados');
     }
   });
 
-  let pending = null;
-  unsubscribe = db.subscribe(() => {
-    clearTimeout(pending);
-    pending = setTimeout(() => { if (!document.querySelector('.modal-backdrop')) renderRoute(true); }, 250);
+  let pendingTimer = null;
+  unsubscribe = db.subscribe((table) => {
+    if (ctx.isAdmin && (table === 'allowed_phones' || table === '*')) {
+      refreshPendingRequests(false);
+    }
+    clearTimeout(pendingTimer);
+    pendingTimer = setTimeout(() => {
+      if (!document.querySelector('.modal-backdrop')) renderRoute(true);
+    }, 250);
   });
 
   window.addEventListener('hashchange', onHash);
   renderRoute();
+}
+
+function updateLiveUi(online) {
+  const lbl = document.getElementById('live-count');
+  if (lbl) lbl.textContent = `${Math.max(1, online.length)} en línea`;
+}
+
+async function refreshPendingRequests(isInitial) {
+  try {
+    const all = await db.list('allowed_phones');
+    pendingList = all.filter(db.isPendingAccess);
+    const badge = document.getElementById('bell-badge');
+    if (badge) {
+      badge.textContent = String(pendingList.length);
+      badge.hidden = pendingList.length === 0;
+    }
+    if (!isInitial) {
+      pendingList.forEach((p) => {
+        if (!knownPendingPhones.has(p.phone)) {
+          toast(`🔔 ${p.display_name} (${db.formatPhone(p.phone)}) solicita acceso`);
+        }
+      });
+    }
+    knownPendingPhones = new Set(pendingList.map((p) => p.phone));
+    paintPendingBanner();
+  } catch { /* noop */ }
+}
+
+function paintPendingBanner() {
+  const wrap = document.getElementById('live-request-bar');
+  if (!wrap || !ctx?.isAdmin) return;
+  if (!pendingList.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = pendingList.map((p) => `
+    <div class="request-banner fade-in">
+      <div class="req-info">
+        <span class="req-pulse">${icon('bell', 16)}</span>
+        <div>
+          <strong>${esc(p.display_name)}</strong> (${esc(db.formatPhone(p.phone))}) está esperando aprobación para entrar ahora mismo.
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary btn-xs" data-quick-approve="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="admin">✔ Aprobar Admin</button>
+        <button class="btn btn-outline btn-xs" data-quick-approve="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="helper">✔ Ayudante</button>
+        <button class="icon-btn icon-danger" data-quick-reject="${esc(p.phone)}" title="Rechazar">${icon('x', 16)}</button>
+      </div>
+    </div>`).join('');
+
+  wrap.querySelectorAll('[data-quick-approve]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      b.disabled = true;
+      try {
+        await db.approvePendingPhone(b.dataset.quickApprove, b.dataset.name, b.dataset.role);
+        toast(`¡${b.dataset.name} aprobada como ${b.dataset.role === 'admin' ? 'Admin' : 'Ayudante'}! 🎉`);
+        await refreshPendingRequests(true);
+      } catch (e) { toast(e.message, 'error'); b.disabled = false; }
+    });
+  });
+
+  wrap.querySelectorAll('[data-quick-reject]').forEach((b) => {
+    b.addEventListener('click', async () => {
+      try {
+        await db.removeAllowedPhone(b.dataset.quickReject);
+        toast('Solicitud rechazada');
+        await refreshPendingRequests(true);
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  });
+}
+
+async function openLiveCenterModal() {
+  const all = await db.list('allowed_phones', { order: 'display_name' }).catch(() => []);
+  const pending = all.filter(db.isPendingAccess);
+  const authorized = all.filter((x) => !db.isPendingAccess(x));
+  const online = db.presence.getOnline();
+  const onlinePhones = new Set(online.map((o) => o.phone));
+
+  const back = document.createElement('div');
+  back.className = 'modal-backdrop';
+  back.innerHTML = `
+  <div class="modal modal-wide">
+    <header class="modal-head">
+      <h3>${icon('users', 18)} Conectados en Vivo y Accesos</h3>
+      <button type="button" class="icon-btn" data-close>${icon('x', 18)}</button>
+    </header>
+    <div class="modal-body live-modal-body">
+      ${ctx.isAdmin && pending.length ? `
+      <div class="live-section">
+        <h4 class="live-sec-title warn">${icon('bell', 15)} Solicitudes pendientes (${pending.length})</h4>
+        <ul class="team-list">
+          ${pending.map((p) => `<li class="team-row req-row">
+            <div class="team-info">
+              <strong>${esc(p.display_name)}</strong>
+              <small class="muted">${esc(db.formatPhone(p.phone))} · Esperando aprobación en vivo</small>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-xs" data-m-app="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="admin">✔ Admin</button>
+              <button class="btn btn-outline btn-xs" data-m-app="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="helper">✔ Ayudante</button>
+              <button class="icon-btn icon-danger" data-m-rej="${esc(p.phone)}" title="Rechazar">${icon('trash', 14)}</button>
+            </div>
+          </li>`).join('')}
+        </ul>
+      </div>` : ''}
+
+      <div class="live-section">
+        <h4 class="live-sec-title"><span class="live-dot"></span> Conectados ahora (${online.length})</h4>
+        <ul class="team-list">
+          ${online.map((o) => `<li class="team-row">
+            <span class="avatar sm">${esc(o.name.charAt(0).toUpperCase())}</span>
+            <div class="team-info">
+              <strong>${esc(o.name)} ${o.phone === ctx.member?.phone ? '<small class="muted">(Tú)</small>' : ''}</strong>
+              <small class="muted">${o.device === 'Celular' ? '📱 Celular' : '💻 PC'} · Viendo: <strong>${esc(o.route || 'Mi boda')}</strong></small>
+            </div>
+            <span class="pill ${o.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${o.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
+          </li>`).join('')}
+        </ul>
+      </div>
+
+      <div class="live-section">
+        <h4 class="live-sec-title">${icon('shield', 15)} Todos los autorizados (${authorized.length})</h4>
+        <ul class="team-list">
+          ${authorized.map((a) => `<li class="team-row">
+            <span class="status-dot ${onlinePhones.has(a.phone) ? 'is-on' : ''}"></span>
+            <div class="team-info">
+              <strong>${esc(a.display_name)}</strong>
+              <small class="muted">${esc(db.formatPhone(a.phone))}${a.area ? ` · ${esc(a.area)}` : ''}</small>
+            </div>
+            <span class="pill ${a.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${a.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
+          </li>`).join('')}
+        </ul>
+      </div>
+    </div>
+    <footer class="modal-foot">
+      <a href="#/equipo" class="btn btn-outline" data-close>Gestionar en Equipo</a>
+      <button type="button" class="btn btn-primary" data-close>Cerrar</button>
+    </footer>
+  </div>`;
+
+  document.body.appendChild(back);
+  const close = () => { back.classList.remove('open'); setTimeout(() => back.remove(), 200); };
+  back.addEventListener('click', (e) => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+
+  back.querySelectorAll('[data-m-app]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await db.approvePendingPhone(b.dataset.mApp, b.dataset.name, b.dataset.role);
+      toast(`¡${b.dataset.name} aprobada como ${b.dataset.role === 'admin' ? 'Admin' : 'Ayudante'}! 🎉`);
+      await refreshPendingRequests(true);
+      close();
+    } catch (e) { toast(e.message, 'error'); }
+  }));
+
+  back.querySelectorAll('[data-m-rej]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await db.removeAllowedPhone(b.dataset.mRej);
+      toast('Solicitud eliminada');
+      await refreshPendingRequests(true);
+      close();
+    } catch (e) { toast(e.message, 'error'); }
+  }));
+
+  requestAnimationFrame(() => back.classList.add('open'));
 }
 
 function onHash() { renderRoute(); }
@@ -215,8 +471,10 @@ async function renderRoute(isRefresh = false) {
   const key = (location.hash.replace(/^#\/?/, '') || 'panel').split(/[?/]/)[0];
   const route = ROUTES.find((r) => r.key === key) || ROUTES[0];
 
-  document.querySelectorAll('.modnav-item').forEach((a) => a.classList.toggle('active', a.dataset.key === route.key));
+  document.querySelectorAll('.modnav-item, .bnav-item[data-key], .sheet-tile').forEach((a) =>
+    a.classList.toggle('active', a.dataset.key === route.key));
   document.title = `${route.label} · Boda Freddy & Priscila`;
+  db.presence.setRoute(route.label);
 
   if (cleanup) { cleanup(); cleanup = null; }
   if (!isRefresh || currentKey !== route.key) {
@@ -236,14 +494,16 @@ async function renderRoute(isRefresh = false) {
     view.classList.remove('fade-in'); void view.offsetWidth; if (!isRefresh) view.classList.add('fade-in');
   } catch (e) {
     console.error(e);
-    view.innerHTML = `<div class="error-box">${icon('alert', 22)}<div><strong>No se pudieron cargar los datos.</strong><p>${esc(e.message)}</p>
-      <p class="muted">Revisa haber ejecutado <code>supabase/update_simple_phone.sql</code> en Supabase.</p></div></div>`;
+    view.innerHTML = `<div class="error-box">${icon('alert', 22)}<div><strong>No se pudieron cargar los datos.</strong><p>${esc(e.message)}</p></div></div>`;
   }
 }
 
 function teardown() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubPresence) { unsubPresence(); unsubPresence = null; }
+  if (unsubWait) { unsubWait(); unsubWait = null; }
+  db.presence.stop();
   window.removeEventListener('hashchange', onHash);
   currentKey = null;
 }

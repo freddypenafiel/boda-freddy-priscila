@@ -21,6 +21,10 @@ export async function renderEquipo(el, ctx) {
 
   const couples = roles.filter((r) => /damas/i.test(r.role));
   const staff = roles.filter((r) => !/damas/i.test(r.role));
+  const pendingReqs = allowed.filter(db.isPendingAccess);
+  const approvedPhones = allowed.filter((x) => !db.isPendingAccess(x));
+  const online = db.presence.getOnline();
+  const onlineSet = new Set(online.map((o) => o.phone));
 
   el.innerHTML = `
   <header class="page-head">
@@ -127,20 +131,54 @@ export async function renderEquipo(el, ctx) {
 
       ${ctx.isAdmin ? `<section class="card">
         <header class="card-head">
-          <h2>${icon('shield', 18)} Accesos al Sistema</h2>
+          <h2>${icon('shield', 18)} Accesos, Solicitudes y Conectados</h2>
           <button class="chip-btn" id="btn-new-access">${icon('userPlus', 13)} Autorizar teléfono</button>
         </header>
-        <p class="muted" style="margin-bottom:10px;font-size:0.83rem;">Solo los números autorizados pueden entrar al organizador. Los <strong>Administradores</strong> editan todo; los <strong>Ayudantes</strong> ven el plan y marcan avances en tareas.</p>
+
+        ${pendingReqs.length ? `
+        <div class="sub" style="color:var(--warn);">${icon('bell', 14)} Solicitudes esperando aprobación (${pendingReqs.length})</div>
+        <ul class="team-list" style="margin-bottom:14px;">
+          ${pendingReqs.map((p) => `<li class="team-row req-row">
+            <div class="team-info">
+              <strong>${esc(p.display_name)}</strong>
+              <small class="muted">${esc(db.formatPhone(p.phone))} · Quiere ingresar ahora</small>
+            </div>
+            <div class="btn-row">
+              <button class="btn btn-primary btn-xs" data-app-phone="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="admin">✔ Admin</button>
+              <button class="btn btn-outline btn-xs" data-app-phone="${esc(p.phone)}" data-name="${esc(p.display_name)}" data-role="helper">✔ Ayudante</button>
+              <button class="icon-btn icon-danger" data-del-access="${esc(p.phone)}" title="Rechazar">${icon('trash', 14)}</button>
+            </div>
+          </li>`).join('')}
+        </ul>` : ''}
+
+        <div class="sub"><span class="live-dot"></span> Conectados en vivo (${online.length})</div>
+        <ul class="team-list" style="margin-bottom:14px;">
+          ${online.map((o) => `<li class="team-row">
+            <span class="avatar sm">${esc(o.name.charAt(0).toUpperCase())}</span>
+            <div class="team-info">
+              <strong>${esc(o.name)} ${o.phone === ctx.member?.phone ? '<small class="muted">(Tú)</small>' : ''}</strong>
+              <small class="muted">${o.device === 'Celular' ? '📱 Celular' : '💻 PC'} · Viendo: ${esc(o.route || 'Mi boda')}</small>
+            </div>
+            <span class="pill ${o.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${o.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
+          </li>`).join('')}
+        </ul>
+
+        <div class="sub">${icon('users', 14)} Personas autorizadas (${approvedPhones.length})</div>
         <ul class="team-list">
-          ${allowed.map((a) => `<li class="team-row">
+          ${approvedPhones.map((a) => `<li class="team-row">
+            <span class="status-dot ${onlineSet.has(a.phone) ? 'is-on' : ''}" title="${onlineSet.has(a.phone) ? 'Conectado ahora' : 'Desconectado'}"></span>
             <div class="team-info">
               <strong>${esc(a.display_name || db.formatPhone(a.phone))}</strong>
               <small class="muted">${esc(db.formatPhone(a.phone))}${a.area ? ` · ${esc(a.area)}` : ''}</small>
             </div>
             <div class="btn-row">
-              <span class="pill ${a.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${a.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
               ${a.phone !== (ctx.member?.phone || '')
-                ? `<button class="icon-btn icon-danger" data-del-access="${esc(a.phone)}" title="Quitar acceso">${icon('trash', 14)}</button>` : ''}
+                ? `<select class="mini-select" data-ch-role="${esc(a.phone)}" data-name="${esc(a.display_name)}">
+                    <option value="admin" ${a.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    <option value="helper" ${a.role === 'helper' ? 'selected' : ''}>Ayudante</option>
+                  </select>
+                  <button class="icon-btn icon-danger" data-del-access="${esc(a.phone)}" title="Quitar acceso">${icon('trash', 14)}</button>`
+                : `<span class="pill pill-stage">Admin (Tú)</span>`}
             </div>
           </li>`).join('')}
         </ul>
@@ -172,10 +210,22 @@ export async function renderEquipo(el, ctx) {
     catch (e) { toast(e.message, 'error'); }
   }));
 
-  // Eventos Accesos
+  // Eventos Accesos y Aprobación 1-clic
   el.querySelector('#btn-new-access')?.addEventListener('click', openAccessModal);
+  el.querySelectorAll('[data-app-phone]').forEach((b) => b.addEventListener('click', async () => {
+    try {
+      await db.approvePendingPhone(b.dataset.appPhone, b.dataset.name, b.dataset.role);
+      toast(`¡${b.dataset.name} aprobada como ${b.dataset.role === 'admin' ? 'Admin' : 'Ayudante'}! 🎉`);
+    } catch (e) { toast(e.message, 'error'); }
+  }));
+  el.querySelectorAll('[data-ch-role]').forEach((sel) => sel.addEventListener('change', async () => {
+    try {
+      await db.approvePendingPhone(sel.dataset.chRole, sel.dataset.name, sel.value);
+      toast(`Rol de ${sel.dataset.name} actualizado ✔`);
+    } catch (e) { toast(e.message, 'error'); }
+  }));
   el.querySelectorAll('[data-del-access]').forEach((b) => b.addEventListener('click', async () => {
-    if (!confirm(`¿Revocar el acceso autorizado de ${db.formatPhone(b.dataset.delAccess)}?`)) return;
+    if (!confirm(`¿Revocar el acceso de ${db.formatPhone(b.dataset.delAccess)}?`)) return;
     try { await db.removeAllowedPhone(b.dataset.delAccess); toast('Acceso eliminado'); }
     catch (e) { toast(e.message, 'error'); }
   }));

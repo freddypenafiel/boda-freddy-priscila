@@ -910,3 +910,284 @@
   .chart-row { grid-template-columns: 1fr; gap: 4px; }
   .chart-val { text-align: left; }
 }
+
+/* =====================================================================
+   UI Pro / App Nativa Android: Presencia en vivo, Notificaciones, Animaciones y Bottom Tab Bar
+   ===================================================================== */
+
+/* Micro-animaciones suaves tipo app profesional */
+@keyframes pulseLive {
+  0%   { box-shadow: 0 0 0 0 rgba(46, 160, 88, 0.55); }
+  70%  { box-shadow: 0 0 0 8px rgba(46, 160, 88, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(46, 160, 88, 0); }
+}
+@keyframes pulseRing {
+  0%   { transform: scale(0.9); opacity: 0.7; }
+  70%  { transform: scale(1.45); opacity: 0; }
+  100% { transform: scale(1.45); opacity: 0; }
+}
+@keyframes slideUpStagger {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes floatRing {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+.splash-ring {
+  width: 78px;
+  height: 78px;
+  border-radius: 22px;
+  background: linear-gradient(135deg, var(--sage-800), var(--sage-600));
+  color: var(--gold-100);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--shadow-md);
+  animation: floatRing 2.2s ease-in-out infinite;
+}
+
+.view.fade-in .card,
+.view.fade-in .stat,
+.view.fade-in .kpi-card,
+.view.fade-in .hero {
+  animation: slideUpStagger 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.view.fade-in .stat:nth-child(2), .view.fade-in .kpi-card:nth-child(2) { animation-delay: 0.04s; }
+.view.fade-in .stat:nth-child(3), .view.fade-in .kpi-card:nth-child(3) { animation-delay: 0.08s; }
+.view.fade-in .stat:nth-child(4), .view.fade-in .kpi-card:nth-child(4) { animation-delay: 0.12s; }
+
+/* Píldora de conectados en vivo */
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: #EDF8F1;
+  border: 1px solid #BCE5CC;
+  color: #1A6B3C;
+  font-size: 0.78rem;
+  font-weight: 700;
+  transition: transform 0.14s, background 0.16s, box-shadow 0.16s;
+}
+.live-pill:hover { background: #DCF2E4; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(26, 107, 60, 0.12); }
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22A055;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: pulseLive 2s infinite;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #CBD5CE;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot.is-on { background: #22A055; animation: pulseLive 2s infinite; }
+
+.avatar.sm { width: 28px; height: 28px; font-size: 0.78rem; flex-shrink: 0; }
+
+/* Campana con badge pulsante */
+.bell-btn { position: relative; }
+.bell-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #D92D20;
+  color: #FFFFFF;
+  font-size: 0.68rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #FFFFFF;
+  animation: pulseLive 1.8s infinite;
+}
+
+/* Banner flotante de solicitudes de acceso en vivo */
+.request-banner-wrap {
+  max-width: var(--max-w);
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.request-banner {
+  margin-top: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #FFFBF2 0%, #FEF0D4 100%);
+  border: 1.5px solid #EBC67D;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.req-info { display: flex; align-items: center; gap: 10px; font-size: 0.88rem; color: var(--sage-900); }
+.req-pulse {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: #B6863A;
+  color: #FFFFFF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  animation: pulseLive 2s infinite;
+}
+.req-row { background: #FFFBF2; border-color: #EED59F; }
+.btn-xs { padding: 6px 11px; font-size: 0.78rem; border-radius: 7px; }
+
+/* Pantalla de espera en vivo */
+.wait-card { text-align: center; }
+.wait-pulse {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wait-pulse .auth-logo { margin: 0; position: relative; z-index: 1; }
+.wait-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  border: 2.5px solid var(--sage-600);
+  animation: pulseRing 2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+.wait-who { font-size: 1rem; color: var(--sage-900); margin: 6px 0 8px; }
+.wait-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: var(--sage-100);
+  color: var(--sage-800);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* Modal de conectados */
+.live-modal-body { display: flex; flex-direction: column; gap: 18px; }
+.live-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--sage-800);
+  margin-bottom: 10px;
+}
+.live-sec-title.warn { color: var(--warn); }
+
+/* ---------------- Navegación Nativa Inferior (Móvil / APK Android) ---------------- */
+.bottom-nav { display: none; }
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: rgba(20, 34, 25, 0.45);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: flex-end;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+.sheet-backdrop[hidden] { display: none; }
+.sheet-backdrop.open { opacity: 1; }
+.sheet {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 22px 22px 0 0;
+  padding: 10px 18px calc(24px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -10px 36px rgba(20, 34, 25, 0.22);
+  transform: translateY(100%);
+  transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.sheet-backdrop.open .sheet { transform: translateY(0); }
+.sheet-handle { width: 42px; height: 4px; border-radius: 999px; background: var(--sage-200); margin: 0 auto 10px; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.sheet-head h3 { font-family: var(--font-display); font-size: 1rem; color: var(--sage-900); }
+.sheet-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.sheet-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 12px;
+  border-radius: 12px;
+  background: var(--beige-card);
+  border: 1.5px solid var(--border);
+  color: var(--sage-900);
+  font-size: 0.88rem;
+  transition: background 0.15s, border-color 0.15s;
+}
+.sheet-tile.active, .sheet-tile:hover { background: var(--sage-100); border-color: var(--sage-600); }
+.sheet-ico {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--sage-100);
+  color: var(--sage-800);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+@media (max-width: 780px) {
+  .modnav { display: none; }
+  .view { padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)); }
+  .app-foot { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .request-banner-wrap { padding: 0 14px; }
+  .bottom-nav {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -4px 18px rgba(31, 53, 39, 0.08);
+  }
+  .bnav-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 5px 2px;
+    font-size: 0.67rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    border-radius: 10px;
+    transition: color 0.15s, transform 0.12s;
+  }
+  .bnav-item:active { transform: scale(0.94); }
+  .bnav-item.active { color: var(--sage-800); background: var(--sage-50); }
+}

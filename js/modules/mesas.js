@@ -29,7 +29,7 @@ export async function renderMesas(el, ctx) {
     <div>
       <span class="eyebrow">${icon('tables', 14)} Distribución ordenada · 1 Cor. 14:40</span>
       <h1>Plano de Mesas</h1>
-      <p>Arrastra a cada invitado hacia su mesa (o usa el selector en celular). Ideal para organizar los <strong>${wedding.guest_target || 100} invitados</strong> en 10 a 12 mesas.</p>
+      <p>Arrastra a cada invitado hacia su mesa (o usa el selector en celular). Ideal para organizar los <strong>${wedding.guest_target || 150} invitados</strong> en 15 mesas.</p>
     </div>
     <div class="head-actions">
       <button class="btn btn-outline" id="btn-print-tables">${icon('printer', 16)} Lista para acomodadores</button>
