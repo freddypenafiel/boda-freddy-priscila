@@ -128,14 +128,14 @@ export async function renderEquipo(el, ctx) {
       ${ctx.isAdmin ? `<section class="card">
         <header class="card-head">
           <h2>${icon('shield', 18)} Accesos al Sistema</h2>
-          <button class="chip-btn" id="btn-new-access">${icon('userPlus', 13)} Autorizar correo</button>
+          <button class="chip-btn" id="btn-new-access">${icon('userPlus', 13)} Autorizar teléfono</button>
         </header>
-        <p class="muted" style="margin-bottom:10px;font-size:0.83rem;">Solo los correos de esta lista pueden entrar al organizador. Los <strong>Administradores</strong> editan todo; los <strong>Ayudantes</strong> ven el plan y marcan avances en tareas.</p>
+        <p class="muted" style="margin-bottom:10px;font-size:0.83rem;">Solo los números autorizados pueden entrar al organizador. Los <strong>Administradores</strong> editan todo; los <strong>Ayudantes</strong> ven el plan y marcan avances en tareas.</p>
         <ul class="team-list">
           ${allowed.map((a) => `<li class="team-row">
             <div class="team-info">
-              <strong>${esc(a.display_name || a.email)}</strong>
-              <small class="muted">${esc(a.email)}${a.area ? ` · ${esc(a.area)}` : ''}</small>
+              <strong>${esc(a.display_name || db.authIdToLabel(a.email))}</strong>
+              <small class="muted">${esc(db.authIdToLabel(a.email))}${a.area ? ` · ${esc(a.area)}` : ''}</small>
             </div>
             <div class="btn-row">
               <span class="pill ${a.role === 'admin' ? 'pill-stage' : 'pill-verse'}">${a.role === 'admin' ? 'Admin' : 'Ayudante'}</span>
@@ -251,37 +251,41 @@ function openSongModal(song, count) {
 
 function openAccessModal() {
   openModal({
-    title: 'Autorizar nuevo acceso',
-    submitLabel: 'Autorizar correo',
+    title: 'Autorizar nuevo acceso (por teléfono)',
+    submitLabel: 'Autorizar número',
     body: `
-      <label class="field"><span>Correo electrónico *</span>
-        <input name="email" type="email" required placeholder="ejemplo@gmail.com">
-      </label>
       <div class="form-grid">
-        <label class="field"><span>Nombre</span>
-          <input name="display_name" placeholder="Ej. Priscila o Katy">
+        <label class="field"><span>Nombre *</span>
+          <input name="display_name" required placeholder="Ej. Priscila o Katy">
         </label>
+        <label class="field"><span>Teléfono *</span>
+          <input name="phone" type="tel" required placeholder="Ej. 0991234567">
+        </label>
+      </div>
+      <div class="form-grid">
         <label class="field"><span>Rol</span>
           <select name="role">
             <option value="helper">Ayudante (ve todo, marca tareas)</option>
             <option value="admin">Administrador (control total)</option>
           </select>
         </label>
-      </div>
-      <label class="field"><span>Área asignada</span>
-        <input name="area" placeholder="Ej. Director del Banquete, Decoración, Audio…">
-      </label>`,
+        <label class="field"><span>Área asignada</span>
+          <input name="area" placeholder="Ej. Novios, Director, Decoración…">
+        </label>
+      </div>`,
     onSubmit: async (fd) => {
       const s = (k) => String(fd.get(k) || '').trim() || null;
-      const email = s('email');
-      if (!email || !email.includes('@')) throw new Error('Ingresa un correo válido.');
-      await db.upsertAllowedEmail({
-        email,
-        display_name: s('display_name') || email.split('@')[0],
+      const phone = s('phone');
+      const display_name = s('display_name');
+      if (!display_name) throw new Error('Escribe el nombre de la persona.');
+      if (!phone || db.normalizePhone(phone).length < 7) throw new Error('Ingresa un número de teléfono válido.');
+      await db.upsertAllowedPhone({
+        phone,
+        display_name,
         role: s('role') || 'helper',
         area: s('area'),
       });
-      toast(`Acceso autorizado para ${email} ✔`);
+      toast(`Acceso autorizado para ${display_name} (${db.formatPhone(phone)}) ✔`);
     },
   });
 }

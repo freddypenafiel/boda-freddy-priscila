@@ -1,6 +1,6 @@
-// Punto de entrada: arranque, autenticación, estructura de la app y enrutador.
+// Punto de entrada: arranque, autenticación (Nombre + Teléfono + Contraseña), estructura y enrutador.
 import * as db from './db.js';
-import { esc, toast, openModal } from './ui.js';
+import { esc, toast } from './ui.js';
 import { icon } from './icons.js';
 import { ROUTES, renderComingSoon } from './modules/registry.js';
 
@@ -33,7 +33,6 @@ async function boot() {
   if (db.getMode() === 'demo') return startApp(await db.auth.member());
 
   db.auth.onChange((evt) => {
-    if (evt === 'PASSWORD_RECOVERY') promptNewPassword();
     if (evt === 'SIGNED_OUT') renderLogin();
   });
   const session = await db.auth.session();
@@ -44,11 +43,11 @@ async function boot() {
 async function afterLogin() {
   const session = await db.auth.session();
   const member = await db.auth.member();
-  if (!member) return renderNoAccess(session?.user?.email || '');
+  if (!member) return renderNoAccess(db.authIdToLabel(session?.user?.email || ''));
   startApp(member);
 }
 
-/* =================== Login =================== */
+/* =================== Login (Nombre + Teléfono + Contraseña) =================== */
 function renderLogin(errorMsg = '') {
   teardown();
   let tab = 'in';
@@ -70,23 +69,31 @@ function renderLogin(errorMsg = '') {
       <div class="auth-card">
         <span class="auth-logo">${icon('rings', 30)}</span>
         <h2 id="auth-title">Bienvenidos</h2>
-        <p class="muted" id="auth-sub">Inicia sesión para organizar nuestra boda.</p>
+        <p class="muted" id="auth-sub">Ingresa con tu teléfono y contraseña.</p>
         <div class="tabs" role="tablist">
           <button type="button" class="tab active" data-tab="in">Iniciar sesión</button>
           <button type="button" class="tab" data-tab="up">Crear cuenta</button>
         </div>
         <form id="auth-form" novalidate>
-          <label class="field" id="f-name" hidden><span>Tu nombre</span><input name="name" autocomplete="name" placeholder="Ej. Priscila"></label>
-          <label class="field"><span>Correo electrónico</span><input name="email" type="email" autocomplete="email" required placeholder="tucorreo@gmail.com"></label>
-          <label class="field"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres"></label>
+          <label class="field" id="f-name" hidden>
+            <span>Tu nombre</span>
+            <input name="name" autocomplete="name" placeholder="Ej. Freddy o Priscila">
+          </label>
+          <label class="field">
+            <span>Número de teléfono</span>
+            <input name="phone" type="tel" autocomplete="tel" required placeholder="Ej. 0991234567">
+          </label>
+          <label class="field">
+            <span>Contraseña</span>
+            <input name="password" type="password" autocomplete="current-password" required minlength="6" placeholder="Mínimo 6 caracteres">
+          </label>
           <p class="form-error" id="auth-error" ${errorMsg ? '' : 'hidden'}>${esc(errorMsg)}</p>
           <p class="form-ok" id="auth-ok" hidden></p>
           <button class="btn btn-primary btn-block" type="submit" id="auth-submit">${icon('lock', 16)} Entrar</button>
-          <button class="link-btn" type="button" id="btn-forgot">¿Olvidaste tu contraseña?</button>
         </form>
         <div class="divider"><span>o</span></div>
         <button class="btn btn-outline btn-block" id="btn-demo">${icon('device', 16)} Explorar en modo demo</button>
-        <p class="fine">Solo las personas autorizadas por Freddy y Priscila pueden ver los datos reales. El modo demo guarda los datos solo en este dispositivo.</p>
+        <p class="fine">Sin correos ni confirmaciones. Solo las personas autorizadas por Freddy y Priscila pueden ver los datos reales.</p>
       </div>
     </section>
   </div>`;
@@ -104,9 +111,9 @@ function renderLogin(errorMsg = '') {
     root.querySelector('#f-name').hidden = tab !== 'up';
     root.querySelector('#auth-title').textContent = tab === 'up' ? 'Crear cuenta' : 'Bienvenidos';
     root.querySelector('#auth-sub').textContent = tab === 'up'
-      ? 'Usa el correo que Freddy o Priscila autorizaron.'
-      : 'Inicia sesión para organizar nuestra boda.';
-    submit.innerHTML = tab === 'up' ? `${icon('plus', 16)} Crear cuenta` : `${icon('lock', 16)} Entrar`;
+      ? 'Solo necesitas tu nombre, teléfono y una contraseña.'
+      : 'Ingresa con tu teléfono y contraseña.';
+    submit.innerHTML = tab === 'up' ? `${icon('plus', 16)} Crear cuenta y entrar` : `${icon('lock', 16)} Entrar`;
     form.password.autocomplete = tab === 'up' ? 'new-password' : 'current-password';
     showErr('');
   }));
@@ -120,19 +127,21 @@ function renderLogin(errorMsg = '') {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const email = form.email.value.trim();
+    const name = form.name.value.trim();
+    const phone = form.phone.value.trim();
     const password = form.password.value;
-    if (!email || !password) return showErr('Escribe tu correo y contraseña.');
+    if (tab === 'up' && !name) return showErr('Escribe tu nombre.');
+    if (!phone) return showErr('Escribe tu número de teléfono.');
     if (password.length < 6) return showErr('La contraseña debe tener al menos 6 caracteres.');
     submit.disabled = true;
     try {
       await ensureCloud();
       if (tab === 'up') {
-        const data = await db.auth.signUp(email, password, form.name.value.trim());
+        const data = await db.auth.signUp(phone, password, name);
         if (data.session) await afterLogin();
-        else showOk('¡Cuenta creada! Revisa tu correo y confirma tu cuenta para poder entrar.');
+        else showOk('Cuenta creada. Desactiva “Confirm email” en Supabase (Authentication → Providers → Email) para entrar directo sin correo.');
       } else {
-        await db.auth.signIn(email, password);
+        await db.auth.signIn(phone, password);
         await afterLogin();
       }
     } catch (err) {
@@ -142,16 +151,6 @@ function renderLogin(errorMsg = '') {
     }
   });
 
-  root.querySelector('#btn-forgot').addEventListener('click', async () => {
-    const email = form.email.value.trim();
-    if (!email) return showErr('Escribe tu correo arriba y vuelve a pulsar “¿Olvidaste tu contraseña?”.');
-    try {
-      await ensureCloud();
-      await db.auth.resetPassword(email);
-      showOk('Te enviamos un enlace para restablecer tu contraseña.');
-    } catch (err) { showErr(err.message); }
-  });
-
   root.querySelector('#btn-demo').addEventListener('click', async () => {
     db.setPreferredMode('demo');
     await db.initDb('demo');
@@ -159,15 +158,15 @@ function renderLogin(errorMsg = '') {
   });
 }
 
-function renderNoAccess(email = '') {
+function renderNoAccess(phoneLabel = '') {
   teardown();
   root.innerHTML = `
   <div class="center-screen">
     <div class="auth-card">
       <span class="auth-logo warn">${icon('lock', 30)}</span>
       <h2>Tu cuenta aún no tiene acceso</h2>
-      ${email ? `<p class="muted" style="margin-bottom:8px;">Sesión iniciada como: <strong>${esc(email)}</strong></p>` : ''}
-      <p class="muted">Pide a Freddy o a Priscila que autoricen este correo. Cuando lo hagan, pulsa reintentar.</p>
+      ${phoneLabel ? `<p class="muted" style="margin-bottom:8px;">Sesión iniciada con: <strong>${esc(phoneLabel)}</strong></p>` : ''}
+      <p class="muted">Pide a Freddy o a Priscila que autoricen tu número de teléfono en <strong>Equipo → Accesos</strong>. Cuando lo hagan, pulsa reintentar.</p>
       <button class="btn btn-primary btn-block" id="btn-retry" style="margin-top:14px;">${icon('refresh', 16)} Ya me autorizaron, reintentar</button>
       <button class="btn btn-ghost btn-block" id="btn-out">${icon('logout', 16)} Cerrar sesión</button>
     </div>
@@ -176,26 +175,12 @@ function renderNoAccess(email = '') {
   root.querySelector('#btn-out').addEventListener('click', async () => { await db.auth.signOut(); renderLogin(); });
 }
 
-function promptNewPassword() {
-  openModal({
-    title: 'Nueva contraseña',
-    submitLabel: 'Actualizar',
-    body: `<label class="field"><span>Escribe tu nueva contraseña</span><input type="password" name="password" minlength="6" required autocomplete="new-password"></label>`,
-    onSubmit: async (fd) => {
-      const pw = String(fd.get('password') || '');
-      if (pw.length < 6) throw new Error('Mínimo 6 caracteres.');
-      await db.auth.updatePassword(pw);
-      toast('Contraseña actualizada ✔');
-    },
-  });
-}
-
 /* =================== App =================== */
 function startApp(member) {
   teardown();
   const mode = db.getMode();
   ctx = { member, isAdmin: member?.role === 'admin', mode };
-  const name = member?.display_name || member?.email || 'Usuario';
+  const name = member?.display_name || db.authIdToLabel(member?.email) || 'Usuario';
 
   root.innerHTML = `
   <div class="app">

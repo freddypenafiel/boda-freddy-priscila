@@ -1,9 +1,11 @@
 // Capa de datos: misma API para Supabase (nube) y modo demo (localStorage).
+// Autenticación por Teléfono + Contraseña (sin pedir correo electrónico).
 import { SUPABASE_URL, SUPABASE_KEY, SUPABASE_CDN } from './config.js';
 import { buildSeed } from './data/seed.js';
 
-const DEMO_KEY = 'fp_boda_demo_v2';
+const DEMO_KEY = 'fp_boda_demo_v3';
 const MODE_KEY = 'fp_boda_mode';
+const PHONE_DOMAIN = 'boda-fp.app';
 const REALTIME_TABLES = [
   'wedding', 'tasks', 'guests', 'guest_groups', 'team_roles',
   'songs', 'budget_items', 'payments', 'vendors', 'seating_tables',
@@ -19,6 +21,36 @@ export const uid = () =>
   globalThis.crypto?.randomUUID ? crypto.randomUUID() : `id-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
 
 const randCode = () => Math.random().toString(36).slice(2, 12).padEnd(10, '7');
+
+/* ---------------- Normalización de teléfono ---------------- */
+export function normalizePhone(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (!d) return '';
+  // Ecuador: 09XXXXXXXX (10 dígitos) -> 5939XXXXXXXX
+  if (d.startsWith('0') && d.length === 10) d = '593' + d.slice(1);
+  return d;
+}
+
+export function formatPhone(raw) {
+  const d = normalizePhone(raw);
+  if (!d) return '';
+  if (d.startsWith('593') && d.length === 12) return '0' + d.slice(3);
+  return d;
+}
+
+export function phoneToAuthId(raw) {
+  const s = String(raw || '').trim().toLowerCase();
+  if (s.includes('@')) return s; // compatibilidad con registros antiguos
+  const d = normalizePhone(s);
+  if (d.length < 7) throw new Error('Ingresa un número de teléfono válido (al menos 7 dígitos).');
+  return `${d}@${PHONE_DOMAIN}`;
+}
+
+export function authIdToLabel(emailOrPhone) {
+  const s = String(emailOrPhone || '').trim();
+  if (s.endsWith(`@${PHONE_DOMAIN}`)) return formatPhone(s.split('@')[0]);
+  return s;
+}
 
 /* ---------------- Modo ---------------- */
 export const getMode = () => mode;
@@ -68,10 +100,10 @@ function loadDemo() {
       });
     }
   }
-  s.members = [{ user_id: 'demo', email: 'freddypeco1024@gmail.com', display_name: 'Freddy (demo)', role: 'admin', area: 'Novios' }];
+  s.members = [{ user_id: 'demo', email: '593999999999@boda-fp.app', display_name: 'Freddy (demo)', role: 'admin', area: 'Novios' }];
   s.allowed_emails = [
-    { email: 'freddypeco1024@gmail.com', role: 'admin', display_name: 'Freddy', area: 'Novios' },
-    { email: 'priscila@ejemplo.com', role: 'admin', display_name: 'Priscila', area: 'Novios' },
+    { email: '593999999999@boda-fp.app', role: 'admin', display_name: 'Freddy', area: 'Novios' },
+    { email: '593988888888@boda-fp.app', role: 'admin', display_name: 'Priscila', area: 'Novios' },
   ];
   localStorage.setItem(DEMO_KEY, JSON.stringify(s));
   return s;
@@ -88,46 +120,40 @@ window.addEventListener('storage', (e) => {
   if (mode === 'demo' && e.key === DEMO_KEY) { demo = loadDemo(); emit('*'); }
 });
 
-/* ---------------- Autenticación ---------------- */
+/* ---------------- Autenticación (Teléfono + Contraseña) ---------------- */
 const AUTH_ERRORS = [
-  [/invalid login credentials/i, 'Correo o contraseña incorrectos.'],
-  [/email not confirmed/i, 'Primero confirma tu correo: revisa tu bandeja de entrada (y spam).'],
-  [/already registered|already been registered/i, 'Ese correo ya tiene una cuenta. Inicia sesión.'],
+  [/invalid login credentials/i, 'Teléfono o contraseña incorrectos.'],
+  [/email not confirmed/i, 'Falta desactivar “Confirm email” en Supabase (Authentication → Providers → Email).'],
+  [/already registered|already been registered/i, 'Ese número de teléfono ya tiene una cuenta. Usa “Iniciar sesión”.'],
   [/password should be at least/i, 'La contraseña debe tener al menos 6 caracteres.'],
   [/rate limit|too many/i, 'Demasiados intentos. Espera un momento e inténtalo de nuevo.'],
-  [/invalid email|unable to validate email/i, 'El correo no es válido.'],
+  [/invalid email|unable to validate email/i, 'Número de teléfono no válido.'],
   [/failed to fetch|network/i, 'Sin conexión con el servidor. Revisa tu internet.'],
 ];
 const authError = (e) => new Error(AUTH_ERRORS.find(([re]) => re.test(e?.message || ''))?.[1] || e?.message || 'Error de autenticación');
 
-const redirectUrl = () => location.origin + location.pathname;
-
 export const auth = {
   async session() {
-    if (mode === 'demo') return { user: { id: 'demo', email: 'freddypeco1024@gmail.com' } };
+    if (mode === 'demo') return { user: { id: 'demo', email: '593999999999@boda-fp.app' } };
     const { data } = await sb.auth.getSession();
     return data.session;
   },
-  async signIn(email, password) {
+  async signIn(phone, password) {
+    const email = phoneToAuthId(phone);
     const { data, error } = await sb.auth.signInWithPassword({ email, password });
     if (error) throw authError(error);
     return data.session;
   },
-  async signUp(email, password, displayName) {
+  async signUp(phone, password, displayName) {
+    const email = phoneToAuthId(phone);
+    const cleanPhone = formatPhone(phone);
     const { data, error } = await sb.auth.signUp({
-      email, password,
-      options: { data: { display_name: displayName }, emailRedirectTo: redirectUrl() },
+      email,
+      password,
+      options: { data: { display_name: displayName || cleanPhone, phone: cleanPhone } },
     });
     if (error) throw authError(error);
     return data;
-  },
-  async resetPassword(email) {
-    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl() });
-    if (error) throw authError(error);
-  },
-  async updatePassword(password) {
-    const { error } = await sb.auth.updateUser({ password });
-    if (error) throw authError(error);
   },
   async signOut() {
     if (mode === 'cloud' && sb) await sb.auth.signOut();
@@ -218,12 +244,13 @@ export async function remove(table, id) {
   emit(table);
 }
 
-/* ---------------- Correos autorizados (PK: email) ---------------- */
-export async function upsertAllowedEmail(row) {
-  const rec = { ...row, email: row.email.trim().toLowerCase() };
+/* ---------------- Teléfonos autorizados (almacenados en allowed_emails) ---------------- */
+export async function upsertAllowedPhone({ phone, display_name, role, area }) {
+  const email = phoneToAuthId(phone);
+  const rec = { email, display_name: display_name || formatPhone(phone), role: role || 'helper', area: area || null };
   if (mode === 'demo') {
     const rows = (demo.allowed_emails ||= []);
-    const i = rows.findIndex((r) => r.email.toLowerCase() === rec.email);
+    const i = rows.findIndex((r) => r.email.toLowerCase() === email);
     if (i >= 0) rows[i] = { ...rows[i], ...rec };
     else rows.push({ ...rec, created_at: new Date().toISOString() });
     saveDemo(); emit('allowed_emails');
@@ -235,8 +262,8 @@ export async function upsertAllowedEmail(row) {
   return data;
 }
 
-export async function removeAllowedEmail(email) {
-  const clean = email.trim().toLowerCase();
+export async function removeAllowedEmail(idOrEmail) {
+  const clean = String(idOrEmail || '').trim().toLowerCase();
   if (mode === 'demo') {
     demo.allowed_emails = (demo.allowed_emails || []).filter((r) => r.email.toLowerCase() !== clean);
     saveDemo(); emit('allowed_emails');
