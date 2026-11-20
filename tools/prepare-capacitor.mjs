@@ -10,7 +10,9 @@ const www = join(root, 'www');
 if (existsSync(www)) rmSync(www, { recursive: true, force: true });
 mkdirSync(www, { recursive: true });
 
-for (const item of ['index.html', 'manifest.json', 'sw.js', 'css', 'js', 'icons', 'boda']) {
-  cpSync(join(root, item), join(www, item), { recursive: true });
+for (const item of ['index.html', 'manifest.json', 'sw.js', 'css', 'js', 'icons', 'assets', 'boda']) {
+  if (existsSync(join(root, item))) {
+    cpSync(join(root, item), join(www, item), { recursive: true });
+  }
 }
 console.log('Carpeta www/ generada y lista para Capacitor ✔');

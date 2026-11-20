@@ -14,11 +14,17 @@ const STATUS_LABELS = {
 const filterState = { stage: 'all', category: 'all', status: 'all', principle: 'all', q: '' };
 
 export async function renderTareas(el, ctx) {
-  const [wedding, tasks, principles] = await Promise.all([
+  const [wedding, tasks, principles, teamRoles] = await Promise.all([
     db.getWedding(),
     db.list('tasks', { order: 'sort' }),
     db.list('principles', { order: 'sort' }),
+    db.list('team_roles', { order: 'sort' }),
   ]);
+
+  const assigneeSuggestions = [...new Set([
+    'Freddy', 'Priscila', 'Freddy y Priscila',
+    ...teamRoles.flatMap((r) => [r.person, r.partner].filter(Boolean)),
+  ])];
 
   const today = todayISO();
   const principleById = Object.fromEntries(principles.map((p) => [p.id, p]));
@@ -177,7 +183,7 @@ export async function renderTareas(el, ctx) {
     mount.querySelectorAll('[data-edit]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const task = tasks.find((x) => String(x.id) === String(btn.dataset.edit));
-        if (task) openTaskModal(task, principles, tasks.length);
+        if (task) openTaskModal(task, principles, tasks.length, assigneeSuggestions);
       });
     });
 
@@ -200,10 +206,10 @@ export async function renderTareas(el, ctx) {
   el.querySelector('#f-status').addEventListener('change', (e) => { filterState.status = e.target.value; paint(); });
   el.querySelector('#f-prin').addEventListener('change', (e) => { filterState.principle = e.target.value; paint(); });
   el.querySelector('#btn-export-tasks-pdf').addEventListener('click', () => exportTasksPdf({ wedding, tasks, principles }));
-  el.querySelector('#btn-new-task')?.addEventListener('click', () => openTaskModal(null, principles, tasks.length));
+  el.querySelector('#btn-new-task')?.addEventListener('click', () => openTaskModal(null, principles, tasks.length, assigneeSuggestions));
 }
 
-function openTaskModal(task, principles, count) {
+function openTaskModal(task, principles, count, assigneeSuggestions = []) {
   const isEdit = Boolean(task);
   openModal({
     title: isEdit ? 'Editar tarea' : 'Nueva tarea',
@@ -233,8 +239,9 @@ function openTaskModal(task, principles, count) {
             ${principles.map((p) => `<option value="${p.id}" ${String(task?.principle_id) === String(p.id) ? 'selected' : ''}>${esc(p.scripture)} · ${esc(p.title)}</option>`).join('')}
           </select>
         </label>
-        <label class="field"><span>Responsable</span>
-          <input name="assignee" value="${esc(task?.assignee || '')}" placeholder="Ej. Freddy, Priscila, Katy…">
+        <label class="field"><span>Responsable (delegar)</span>
+          <input name="assignee" list="assignee-list" value="${esc(task?.assignee || '')}" placeholder="Ej. Freddy, Priscila, Alfonso Carangui…">
+          <datalist id="assignee-list">${assigneeSuggestions.map((n) => `<option value="${esc(n)}">`).join('')}</datalist>
         </label>
         <label class="field"><span>Fecha límite</span>
           <input name="due_date" type="date" value="${esc(task?.due_date || '')}">

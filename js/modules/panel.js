@@ -61,12 +61,14 @@ export async function renderPanel(el, ctx) {
   const principleById = Object.fromEntries(principles.map((p) => [p.id, p]));
   const verse = verseOfDay();
 
+  const dirFallback = wedding.banquet_director || team.find((r) => /director/i.test(r.role))?.person || null;
+  const spkFallback = wedding.speaker || team.find((r) => /orador|discurs/i.test(r.role))?.person || null;
   const keyData = [
     ['book', 'Salón del Reino', wedding.kingdom_hall],
-    ['sparkle', 'Orador del discurso', wedding.speaker],
+    ['sparkle', 'Orador del discurso', spkFallback],
     ['clipboard', 'Boda civil', wedding.civil_date ? `${fmtDate(wedding.civil_date)}${wedding.civil_place ? ' · ' + wedding.civil_place : ''}` : wedding.civil_place],
     ['pin', 'Local de recepción', wedding.reception_venue],
-    ['star', 'Director del Banquete', wedding.banquet_director],
+    ['star', 'Director del Banquete', dirFallback],
     ['shirt', 'Código de vestimenta', wedding.dress_colors],
   ];
   const pendingKeys = keyData.filter(([, , v]) => missing(v)).length;

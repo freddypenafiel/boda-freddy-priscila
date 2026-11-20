@@ -1,6 +1,6 @@
 // Módulo "Presupuesto": control en USD con mentalidad "Cero deudas · 1 Juan 2:15-17", rubros y abonos.
 import * as db from '../db.js';
-import { esc, toast, openModal, fmtMoney, fmtDate, todayISO } from '../ui.js';
+import { esc, toast, openModal, fmtMoney, fmtDate, todayISO, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
 import { CATEGORIES } from '../data/seed.js';
 import { exportBudgetPdf } from '../pdf.js';
@@ -230,7 +230,8 @@ function openPayModal(item) {
         method: String(fd.get('method') || '').trim() || null,
         note: String(fd.get('note') || '').trim() || null,
       });
-      toast(`Abono de ${fmtMoney(amount)} registrado ✔`);
+      celebrate();
+      toast(`Abono de ${fmtMoney(amount)} guardado en la nube ✔`);
     },
   });
 }

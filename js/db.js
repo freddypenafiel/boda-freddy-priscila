@@ -19,8 +19,50 @@ let channel = null;
 let presenceCh = null;
 let currentPresenceMeta = null;
 let onlineUsers = [];
+let syncState = { status: navigator.onLine === false ? 'offline' : 'idle', lastSyncAt: null, message: '' };
 const listeners = new Set();
 const presenceListeners = new Set();
+const syncListeners = new Set();
+
+function setSync(status, message = '') {
+  syncState = {
+    status,
+    lastSyncAt: status === 'saved' ? new Date().toISOString() : syncState.lastSyncAt,
+    message,
+  };
+  syncListeners.forEach((cb) => { try { cb(syncState); } catch (e) { console.error(e); } });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => setSync('saved', 'Conexión restablecida'));
+  window.addEventListener('offline', () => setSync('offline', 'Sin conexión a internet'));
+}
+
+export const sync = {
+  getState: () => syncState,
+  onChange(cb) {
+    syncListeners.add(cb);
+    return () => syncListeners.delete(cb);
+  },
+  async pingNow() {
+    if (mode !== 'cloud' || !sb) {
+      setSync('saved', 'Guardado local (demo)');
+      emit('*');
+      return true;
+    }
+    setSync('saving', 'Sincronizando…');
+    try {
+      const { error } = await sb.from('wedding').select('id, updated_at').eq('id', 1).maybeSingle();
+      if (error) throw error;
+      setSync('saved', 'Sincronizado con la nube');
+      emit('*');
+      return true;
+    } catch (e) {
+      setSync(navigator.onLine === false ? 'offline' : 'error', e.message || 'Error de conexión');
+      return false;
+    }
+  },
+};
 
 export const uid = () =>
   globalThis.crypto?.randomUUID ? crypto.randomUUID() : `id-${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
@@ -326,24 +368,34 @@ export async function list(table, { order = null, ascending = true } = {}) {
   return data;
 }
 
-export async function insert(table, row) {
-  if (mode === 'demo') {
-    const rows = (demo[table] ||= []);
-    const nextIntId = () => rows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
-    const id = (table === 'seating_tables' || table === 'guest_groups') ? nextIntId() : uid();
-    const extra = table === 'guests' ? { rsvp_code: row.rsvp_code || randCode(), rsvp: row.rsvp || 'pendiente', companions_confirmed: row.companions_confirmed ?? 0, invitation_sent: row.invitation_sent ?? false } : {};
-    const rec = { id, created_at: new Date().toISOString(), ...extra, ...row };
-    rows.push(rec);
-    saveDemo(); emit(table);
-    return { ...rec };
+async function syncWeddingFromRole(role, person) {
+  if (!role) return;
+  const r = String(role).toLowerCase();
+  if (/director/.test(r)) {
+    await updateWeddingRaw({ banquet_director: person || null });
+  } else if (/orador|discurs/.test(r)) {
+    await updateWeddingRaw({ speaker: person || null });
   }
-  const { data, error } = await sb.from(table).insert(row).select().single();
-  if (error) throw new Error(error.message);
-  emit(table);
-  return data;
 }
 
-export async function update(table, id, patch) {
+async function syncRolesFromWedding(patch) {
+  if (!patch) return;
+  const roles = await list('team_roles');
+  if ('banquet_director' in patch) {
+    const r = roles.find((x) => /director/i.test(x.role));
+    if (r && r.person !== patch.banquet_director) {
+      await updateRaw('team_roles', r.id, { person: patch.banquet_director || null });
+    }
+  }
+  if ('speaker' in patch) {
+    const r = roles.find((x) => /orador|discurs/i.test(x.role));
+    if (r && r.person !== patch.speaker) {
+      await updateRaw('team_roles', r.id, { person: patch.speaker || null });
+    }
+  }
+}
+
+async function updateRaw(table, id, patch) {
   if (mode === 'demo') {
     const rows = demo[table] || [];
     const i = rows.findIndex((r) => String(r.id) === String(id));
@@ -358,21 +410,81 @@ export async function update(table, id, patch) {
   return data;
 }
 
-export async function remove(table, id) {
+async function updateWeddingRaw(patch) {
   if (mode === 'demo') {
-    demo[table] = (demo[table] || []).filter((r) => String(r.id) !== String(id));
-    if (table === 'seating_tables') {
-      (demo.guests || []).forEach((g) => { if (String(g.table_id) === String(id)) g.table_id = null; });
-    }
-    if (table === 'budget_items') {
-      demo.payments = (demo.payments || []).filter((p) => String(p.budget_item_id) !== String(id));
-    }
-    saveDemo(); emit(table);
-    return;
+    demo.wedding = { ...demo.wedding, ...patch };
+    saveDemo(); emit('wedding');
+    return { ...demo.wedding };
   }
-  const { error } = await sb.from(table).delete().eq('id', id);
+  const { data, error } = await sb.from('wedding').update(patch).eq('id', 1).select().single();
   if (error) throw new Error(error.message);
-  emit(table);
+  emit('wedding');
+  return data;
+}
+
+export async function insert(table, row) {
+  setSync('saving', 'Guardando en la nube…');
+  try {
+    let result;
+    if (mode === 'demo') {
+      const rows = (demo[table] ||= []);
+      const nextIntId = () => rows.reduce((m, r) => Math.max(m, Number(r.id) || 0), 0) + 1;
+      const id = (table === 'seating_tables' || table === 'guest_groups') ? nextIntId() : uid();
+      const extra = table === 'guests' ? { rsvp_code: row.rsvp_code || randCode(), rsvp: row.rsvp || 'pendiente', companions_confirmed: row.companions_confirmed ?? 0, invitation_sent: row.invitation_sent ?? false } : {};
+      const rec = { id, created_at: new Date().toISOString(), ...extra, ...row };
+      rows.push(rec);
+      saveDemo(); emit(table);
+      result = { ...rec };
+    } else {
+      const { data, error } = await sb.from(table).insert(row).select().single();
+      if (error) throw new Error(error.message);
+      emit(table);
+      result = data;
+    }
+    if (table === 'team_roles') await syncWeddingFromRole(result.role, result.person).catch(() => {});
+    setSync('saved', 'Guardado en la nube');
+    return result;
+  } catch (e) {
+    setSync(navigator.onLine === false ? 'offline' : 'error', e.message);
+    throw e;
+  }
+}
+
+export async function update(table, id, patch) {
+  setSync('saving', 'Guardando en la nube…');
+  try {
+    const result = await updateRaw(table, id, patch);
+    if (table === 'team_roles') await syncWeddingFromRole(result.role, result.person).catch(() => {});
+    setSync('saved', 'Guardado en la nube');
+    return result;
+  } catch (e) {
+    setSync(navigator.onLine === false ? 'offline' : 'error', e.message);
+    throw e;
+  }
+}
+
+export async function remove(table, id) {
+  setSync('saving', 'Guardando en la nube…');
+  try {
+    if (mode === 'demo') {
+      demo[table] = (demo[table] || []).filter((r) => String(r.id) !== String(id));
+      if (table === 'seating_tables') {
+        (demo.guests || []).forEach((g) => { if (String(g.table_id) === String(id)) g.table_id = null; });
+      }
+      if (table === 'budget_items') {
+        demo.payments = (demo.payments || []).filter((p) => String(p.budget_item_id) !== String(id));
+      }
+      saveDemo(); emit(table);
+    } else {
+      const { error } = await sb.from(table).delete().eq('id', id);
+      if (error) throw new Error(error.message);
+      emit(table);
+    }
+    setSync('saved', 'Guardado en la nube');
+  } catch (e) {
+    setSync(navigator.onLine === false ? 'offline' : 'error', e.message);
+    throw e;
+  }
 }
 
 /* ---------------- Teléfonos autorizados y aprobación en 1 clic ---------------- */
@@ -428,15 +540,16 @@ export async function getWedding() {
 }
 
 export async function updateWedding(patch) {
-  if (mode === 'demo') {
-    demo.wedding = { ...demo.wedding, ...patch };
-    saveDemo(); emit('wedding');
-    return { ...demo.wedding };
+  setSync('saving', 'Guardando en la nube…');
+  try {
+    const result = await updateWeddingRaw(patch);
+    await syncRolesFromWedding(patch).catch(() => {});
+    setSync('saved', 'Guardado en la nube');
+    return result;
+  } catch (e) {
+    setSync(navigator.onLine === false ? 'offline' : 'error', e.message);
+    throw e;
   }
-  const { data, error } = await sb.from('wedding').update(patch).eq('id', 1).select().single();
-  if (error) throw new Error(error.message);
-  emit('wedding');
-  return data;
 }
 
 /* ---------------- Funciones públicas (Web de invitados) ---------------- */

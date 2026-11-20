@@ -2,6 +2,7 @@
 import * as db from '../db.js';
 import { esc, toast, openModal } from '../ui.js';
 import { icon } from '../icons.js';
+import { exportSeatingPdf } from '../pdf.js';
 
 function seatsOf(g) {
   if (g.rsvp === 'no') return 0;
@@ -130,7 +131,7 @@ export async function renderMesas(el, ctx) {
     }));
   }
 
-  el.querySelector('#btn-print-tables').addEventListener('click', () => printUsherList(wedding, tables, activeGuests));
+  el.querySelector('#btn-print-tables').addEventListener('click', () => exportSeatingPdf({ wedding, tables, guests }));
 }
 
 function guestChipHtml(g, groupById, tables, isAdmin) {
@@ -187,43 +188,4 @@ function openTableModal(table, count) {
       else { await db.insert('seating_tables', payload); toast('Mesa creada ✔'); }
     },
   });
-}
-
-function printUsherList(wedding, tables, guests) {
-  const w = window.open('', '_blank');
-  if (!w) return toast('Permite las ventanas emergentes para imprimir.', 'error');
-  const tableById = Object.fromEntries(tables.map((t) => [String(t.id), t.name]));
-  const sorted = [...guests].sort((a, b) => a.full_name.localeCompare(b.full_name, 'es'));
-
-  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
-  <title>Lista de Acomodadores · ${esc(wedding.couple_names || 'Freddy & Priscila')}</title>
-  <style>
-    body{font-family:Segoe UI,sans-serif;color:#1F2D24;padding:24px;max-width:900px;margin:0 auto;}
-    h1{color:#2F4B38;border-bottom:3px solid #B6863A;padding-bottom:8px;margin-bottom:6px;font-size:20px;}
-    h2{color:#2F4B38;margin:20px 0 8px;font-size:15px;}
-    table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;}
-    th,td{border:1px solid #C8D5CA;padding:6px 8px;text-align:left;}
-    th{background:#E9F0EA;color:#1F3527;}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    .box{border:1px solid #C8D5CA;border-radius:6px;padding:10px;page-break-inside:avoid;}
-    .box h3{margin:0 0 6px;color:#2F4B38;font-size:13px;}
-    .box ul{margin:0;padding-left:16px;font-size:12px;}
-    @media print { .no-print{display:none;} }
-  </style></head><body>
-  <button class="no-print" onclick="window.print()" style="float:right;padding:8px 14px;background:#2F4B38;color:#fff;border:none;border-radius:6px;cursor:pointer;">🖨️ Imprimir / Guardar PDF</button>
-  <h1>Lista de Mesas para Acomodadores — ${esc(wedding.couple_names || 'Freddy & Priscila')}</h1>
-  <p style="font-size:12px;color:#55665B;">“Háganlo todo de forma digna y ordenada” (1 Cor. 14:40) · Total activos: ${guests.reduce((n, g) => n + seatsOf(g), 0)} personas</p>
-  <h2>1. Lista Alfabética de Invitados</h2>
-  <table><thead><tr><th>Invitado</th><th>Personas</th><th>Mesa</th><th>Estado</th><th>Notas / Dieta</th></tr></thead><tbody>
-  ${sorted.map((g) => `<tr><td><strong>${esc(g.full_name)}</strong></td><td>${seatsOf(g)}</td><td>${esc(tableById[String(g.table_id)] || 'Sin asignar')}</td><td>${g.rsvp === 'si' ? 'Confirmado' : 'Pendiente'}</td><td>${esc([g.diet, g.notes].filter(Boolean).join(' · '))}</td></tr>`).join('')}
-  </tbody></table>
-  <h2>2. Distribución por Mesa</h2>
-  <div class="grid">
-  ${tables.map((t) => {
-    const ms = guests.filter((g) => String(g.table_id) === String(t.id));
-    const used = ms.reduce((n, g) => n + seatsOf(g), 0);
-    return `<div class="box"><h3>${esc(t.name)} (${used}/${t.capacity})</h3><ul>${ms.length ? ms.map((g) => `<li>${esc(g.full_name)} (${seatsOf(g)})</li>`).join('') : '<li><em>Sin invitados asignados</em></li>'}</ul></div>`;
-  }).join('')}
-  </div></body></html>`);
-  w.document.close();
 }

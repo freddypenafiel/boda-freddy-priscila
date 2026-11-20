@@ -1,15 +1,19 @@
 // Módulo "Invitados": gestión de los 100 invitados, RSVP, grupos, WhatsApp y exportación CSV.
 import * as db from '../db.js';
+import { PUBLIC_SITE_URL } from '../config.js';
 import { esc, toast, openModal } from '../ui.js';
 import { icon } from '../icons.js';
-import { exportGuestsPdf } from '../pdf.js';
+import { exportGuestsPdf, downloadOrShareText } from '../pdf.js';
 
 const RSVP_LABELS = { pendiente: 'Pendiente', si: 'Confirmado', no: 'No asiste' };
 const SIDE_LABELS = { ambos: 'Ambos', novio: 'Lado de Freddy', novia: 'Lado de Priscila' };
 const fState = { group: 'all', rsvp: 'all', side: 'all', witness: 'all', q: '' };
 
 function publicRsvpUrl(code) {
-  const base = new URL('boda/', location.href).href;
+  const isLocalApp = Boolean(window.Capacitor) || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const base = (db.getMode() === 'cloud' && isLocalApp)
+    ? `${PUBLIC_SITE_URL}boda/`
+    : new URL('boda/', location.href).href;
   const demoQ = db.getMode() === 'demo' ? '&demo=1' : '';
   return `${base}?code=${encodeURIComponent(code)}${demoQ}`;
 }
@@ -345,11 +349,6 @@ function exportCsv(guests, groupById, tableById) {
     g.rsvp_code || '',
     g.notes || g.rsvp_message || '',
   ].map(csvEsc).join(','));
-  const blob = new Blob(['\uFEFF' + [headers.map(csvEsc).join(','), ...rows].join('\n')], { type: 'text/csv;charset=utf-8' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'invitados_boda_freddy_priscila.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-  toast('Lista exportada en CSV ✔');
+  const csvContent = [headers.map(csvEsc).join(','), ...rows].join('\n');
+  downloadOrShareText('invitados_boda_freddy_priscila.csv', csvContent, 'text/csv;charset=utf-8', 'Lista de Invitados (CSV)');
 }

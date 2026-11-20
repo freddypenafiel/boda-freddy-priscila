@@ -1,6 +1,6 @@
 // Service Worker PWA: acelera la carga y permite abrir la app sin conexión.
 // Nunca intercepta peticiones a Supabase ni a APIs externas.
-const CACHE = 'boda-fp-v7';
+const CACHE = 'boda-fp-v8';
 const ASSETS = [
   './',
   './index.html',
@@ -8,6 +8,8 @@ const ASSETS = [
   './icons/favicon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './assets/ref_vestimenta_damas_caballeros.jpg',
+  './assets/ref_traje_novio.jpg',
   './css/base.css',
   './css/layout.css',
   './css/components.css',
@@ -17,6 +19,7 @@ const ASSETS = [
   './js/icons.js',
   './js/pdf.js',
   './js/ui.js',
+  './js/vendor/html2pdf.bundle.min.js',
   './js/data/seed.js',
   './js/modules/registry.js',
   './js/modules/panel.js',

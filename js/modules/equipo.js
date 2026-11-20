@@ -1,7 +1,9 @@
-// Módulo "Equipo": roles de colaboradores, mix de baile, guías PDF imprimibles y accesos de ayudantes.
+// Módulo "Equipo": roles de colaboradores (con lógica dinámica según rol), mix de baile,
+// guías PDF descargables/compartibles en tiempo real y accesos con aprobación en 1 clic.
 import * as db from '../db.js';
-import { esc, toast, openModal, fmtDate } from '../ui.js';
+import { esc, toast, openModal, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
+import { exportRoleGuidePdf } from '../pdf.js';
 
 const ROLE_PRESETS = [
   'Damas y caballeros', 'Director del Banquete', 'Orador del discurso',
@@ -9,59 +11,66 @@ const ROLE_PRESETS = [
   'Coordinador de catering', 'Mesa de regalos y torta', 'Otro rol',
 ];
 
+const isCoupleRole = (role) => /damas|caballeros|pareja/i.test(String(role || ''));
+
 export async function renderEquipo(el, ctx) {
-  const [wedding, roles, songs, guests, tables, allowed] = await Promise.all([
+  const [wedding, roles, songs, guests, tables, tasks, allowed] = await Promise.all([
     db.getWedding(),
     db.list('team_roles', { order: 'sort' }),
     db.list('songs', { order: 'sort' }),
     db.list('guests'),
     db.list('seating_tables', { order: 'sort' }),
+    db.list('tasks', { order: 'sort' }),
     ctx.isAdmin ? db.list('allowed_phones', { order: 'display_name' }).catch(() => []) : Promise.resolve([]),
   ]);
 
-  const couples = roles.filter((r) => /damas/i.test(r.role));
-  const staff = roles.filter((r) => !/damas/i.test(r.role));
+  const couples = roles.filter((r) => isCoupleRole(r.role));
+  const staff = roles.filter((r) => !isCoupleRole(r.role));
   const pendingReqs = allowed.filter(db.isPendingAccess);
   const approvedPhones = allowed.filter((x) => !db.isPendingAccess(x));
   const online = db.presence.getOnline();
   const onlineSet = new Set(online.map((o) => o.phone));
+
+  const pdfPayload = { wedding, couples, staff, songs, guests, tables, tasks };
+  const dirName = staff.find((r) => /director/i.test(r.role))?.person || wedding.banquet_director || 'Por asignar';
+  const audioName = staff.find((r) => /audio|música/i.test(r.role))?.person || 'Por asignar';
 
   el.innerHTML = `
   <header class="page-head">
     <div>
       <span class="eyebrow">${icon('star', 14)} Colaboradores y orden · Juan 2:8</span>
       <h1>Equipo, Roles y Guías PDF</h1>
-      <p>Organiza a quienes les ayudarán en la boda, genera las guías imprimibles en PDF con sus datos reales y gestiona los accesos de ayudantes.</p>
+      <p>Organiza a quienes les ayudarán en la boda, descarga o comparte sus guías PDF sincronizadas en tiempo real y gestiona los accesos.</p>
     </div>
     ${ctx.isAdmin ? `<button class="btn btn-primary" id="btn-new-role">${icon('plus', 16)} Agregar rol / pareja</button>` : ''}
   </header>
 
   <section class="card">
     <header class="card-head">
-      <h2>${icon('printer', 18)} Generar Guías PDF por Rol (con tus datos actuales)</h2>
+      <h2>${icon('printer', 18)} Guías Oficiales PDF por Rol (en tiempo real)</h2>
       <span class="pill pill-stage">Verde Salvia &amp; Beige</span>
     </header>
-    <p class="muted" style="margin-bottom:14px;">Cada botón abre una hoja limpia de 1 página lista para guardar como PDF (<em>Imprimir → Guardar como PDF</em>) y compartir por WhatsApp.</p>
+    <p class="muted" style="margin-bottom:14px;">Cada guía se genera al instante con los nombres, parejas, canciones y datos actuales de la base de datos. Puedes visualizarla, descargar el archivo <strong>.pdf</strong> o compartirlo directo por WhatsApp.</p>
     <div class="pdf-grid">
       <button class="pdf-card" data-pdf="damas">
         <strong>1. Caballeros y Damas</strong>
-        <small>${couples.length} parejas · Código verde salvia y beige · Mix de ${songs.length} canciones</small>
-        <span class="link">${icon('printer', 14)} Abrir / Guardar PDF</span>
+        <small>${couples.length} parejas · Fotos de vestimenta verde salvia · Mix de ${songs.length} canciones</small>
+        <span class="link">${icon('download', 14)} Ver / Descargar PDF</span>
       </button>
       <button class="pdf-card" data-pdf="director">
         <strong>2. Director del Banquete</strong>
-        <small>Supervisión, moderación, horario y tranquilidad de los novios (Juan 2:8)</small>
-        <span class="link">${icon('printer', 14)} Abrir / Guardar PDF</span>
+        <small>Encargado: <b>${esc(dirName)}</b> · Supervisión y orden (Juan 2:8)</small>
+        <span class="link">${icon('download', 14)} Ver / Descargar PDF</span>
       </button>
       <button class="pdf-card" data-pdf="audio">
-        <strong>3. Audio, Música y Fotografía</strong>
-        <small>Reverencia en el Salón del Reino, volumen y lista musical (Filip. 4:8)</small>
-        <span class="link">${icon('printer', 14)} Abrir / Guardar PDF</span>
+        <strong>3. Audio, Música y Foto</strong>
+        <small>Audio: <b>${esc(audioName)}</b> · Reverencia en el Salón y lista musical</small>
+        <span class="link">${icon('download', 14)} Ver / Descargar PDF</span>
       </button>
       <button class="pdf-card" data-pdf="acomodadores">
         <strong>4. Acomodadores y Logística</strong>
-        <small>${wedding.guest_target || 100} invitados · ${tables.length} mesas · Hospitalidad (Rom. 12:13)</small>
-        <span class="link">${icon('printer', 14)} Abrir / Guardar PDF</span>
+        <small>${wedding.guest_target || 150} invitados · ${tables.length} mesas · Hospitalidad (Rom. 12:13)</small>
+        <span class="link">${icon('download', 14)} Ver / Descargar PDF</span>
       </button>
     </div>
   </section>
@@ -71,6 +80,7 @@ export async function renderEquipo(el, ctx) {
       <section class="card">
         <header class="card-head">
           <h2>${icon('users', 18)} Damas y Caballeros (${couples.length})</h2>
+          ${ctx.isAdmin ? `<button class="chip-btn" id="btn-add-couple">${icon('plus', 13)} Pareja</button>` : ''}
         </header>
         <ul class="team-list">
           ${couples.map((r, i) => `<li class="team-row">
@@ -89,19 +99,20 @@ export async function renderEquipo(el, ctx) {
 
       <section class="card">
         <header class="card-head">
-          <h2>${icon('star', 18)} Otros Roles Clave</h2>
+          <h2>${icon('star', 18)} Roles y Colaboradores (${staff.length})</h2>
         </header>
         <ul class="team-list">
           ${staff.map((r) => `<li class="team-row">
             <div class="team-info">
               <strong>${esc(r.role)}</strong>
-              <span>${r.person ? esc(r.person) : '<span class="tbd-pill">Por definir</span>'}${r.partner ? ` y ${esc(r.partner)}` : ''}</span>
+              <span>${r.person ? esc(r.person) : '<span class="tbd-pill">Por definir</span>'}</span>
               ${r.notes || r.phone ? `<small class="muted">${esc([r.notes, r.phone].filter(Boolean).join(' · '))}</small>` : ''}
             </div>
-            ${ctx.isAdmin ? `<div class="btn-row">
-              <button class="icon-btn" data-edit-role="${esc(r.id)}" title="Editar">${icon('edit', 14)}</button>
-              <button class="icon-btn icon-danger" data-del-role="${esc(r.id)}" title="Eliminar">${icon('trash', 14)}</button>
-            </div>` : ''}
+            <div class="btn-row">
+              <button class="chip-btn" data-role-pdf="${esc(r.id)}" title="Generar guía PDF para ${esc(r.person || r.role)}">${icon('printer', 13)} PDF</button>
+              ${ctx.isAdmin ? `<button class="icon-btn" data-edit-role="${esc(r.id)}" title="Editar">${icon('edit', 14)}</button>
+                <button class="icon-btn icon-danger" data-del-role="${esc(r.id)}" title="Eliminar">${icon('trash', 14)}</button>` : ''}
+            </div>
           </li>`).join('')}
         </ul>
       </section>
@@ -187,7 +198,8 @@ export async function renderEquipo(el, ctx) {
   </div>`;
 
   // Eventos Roles
-  el.querySelector('#btn-new-role')?.addEventListener('click', () => openRoleModal(null, roles.length));
+  el.querySelector('#btn-new-role')?.addEventListener('click', () => openRoleModal(null, roles.length, ''));
+  el.querySelector('#btn-add-couple')?.addEventListener('click', () => openRoleModal(null, roles.length, 'Damas y caballeros'));
   el.querySelectorAll('[data-edit-role]').forEach((b) => b.addEventListener('click', () => {
     const r = roles.find((x) => String(x.id) === String(b.dataset.editRole));
     if (r) openRoleModal(r, roles.length);
@@ -196,6 +208,19 @@ export async function renderEquipo(el, ctx) {
     if (!confirm('¿Eliminar este rol?')) return;
     try { await db.remove('team_roles', b.dataset.delRole); toast('Rol eliminado'); }
     catch (e) { toast(e.message, 'error'); }
+  }));
+
+  // PDF por tarjeta superior y PDF individual por colaborador
+  el.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
+    exportRoleGuidePdf(b.dataset.pdf, pdfPayload);
+  }));
+  el.querySelectorAll('[data-role-pdf]').forEach((b) => b.addEventListener('click', () => {
+    const r = staff.find((x) => String(x.id) === String(b.dataset.rolePdf));
+    if (!r) return;
+    if (/director/i.test(r.role)) exportRoleGuidePdf('director', pdfPayload);
+    else if (/audio|música|foto|video/i.test(r.role)) exportRoleGuidePdf('audio', pdfPayload);
+    else if (/acomodador/i.test(r.role)) exportRoleGuidePdf('acomodadores', pdfPayload);
+    else exportRoleGuidePdf(r, pdfPayload);
   }));
 
   // Eventos Canciones
@@ -215,6 +240,7 @@ export async function renderEquipo(el, ctx) {
   el.querySelectorAll('[data-app-phone]').forEach((b) => b.addEventListener('click', async () => {
     try {
       await db.approvePendingPhone(b.dataset.appPhone, b.dataset.name, b.dataset.role);
+      celebrate();
       toast(`¡${b.dataset.name} aprobada como ${b.dataset.role === 'admin' ? 'Admin' : 'Ayudante'}! 🎉`);
     } catch (e) { toast(e.message, 'error'); }
   }));
@@ -229,51 +255,76 @@ export async function renderEquipo(el, ctx) {
     try { await db.removeAllowedPhone(b.dataset.delAccess); toast('Acceso eliminado'); }
     catch (e) { toast(e.message, 'error'); }
   }));
-
-  // Generadores de PDF
-  el.querySelectorAll('[data-pdf]').forEach((b) => b.addEventListener('click', () => {
-    openRoleGuidePdf(b.dataset.pdf, { wedding, couples, staff, songs, guests, tables });
-  }));
 }
 
-function openRoleModal(r, count) {
+function openRoleModal(r, count, presetRole = '') {
   const isEdit = Boolean(r);
-  openModal({
-    title: isEdit ? 'Editar rol' : 'Agregar rol / pareja',
-    submitLabel: isEdit ? 'Guardar' : 'Agregar',
+  const initialRole = r?.role || presetRole || 'Director del Banquete';
+  const showCouple = isCoupleRole(initialRole);
+
+  const { form } = openModal({
+    title: isEdit ? 'Editar rol' : 'Agregar rol / colaborador',
+    submitLabel: isEdit ? 'Guardar cambios' : 'Agregar',
     body: `
-      <label class="field"><span>Rol *</span>
-        <input name="role" list="role-presets" required value="${esc(r?.role || '')}" placeholder="Ej. Director del Banquete">
+      <label class="field"><span>Rol en la boda *</span>
+        <input name="role" id="m-role-input" list="role-presets" required value="${esc(initialRole)}" placeholder="Ej. Director del Banquete">
         <datalist id="role-presets">${ROLE_PRESETS.map((p) => `<option value="${p}">`).join('')}</datalist>
       </label>
-      <div class="form-grid">
-        <label class="field"><span>Persona / Caballero</span>
-          <input name="person" value="${esc(r?.person || '')}" placeholder="Ej. Manuel">
+      <div class="form-grid" id="m-person-grid">
+        <label class="field"><span id="m-person-lbl">${showCouple ? 'Caballero *' : 'Hermano / Persona encargada *'}</span>
+          <input name="person" required value="${esc(r?.person || '')}" placeholder="${showCouple ? 'Ej. Manuel' : 'Ej. Alfonso Carangui'}">
         </label>
-        <label class="field"><span>Pareja / Dama (opcional)</span>
-          <input name="partner" value="${esc(r?.partner || '')}" placeholder="Ej. Nancy">
-        </label>
-      </div>
-      <div class="form-grid">
-        <label class="field"><span>Teléfono</span>
-          <input name="phone" value="${esc(r?.phone || '')}" placeholder="0991234567">
-        </label>
-        <label class="field"><span>Orden</span>
-          <input name="sort" type="number" value="${esc(r?.sort ?? count + 1)}">
+        <label class="field" id="m-partner-wrap" ${showCouple ? '' : 'hidden'}><span>Dama (pareja) *</span>
+          <input name="partner" value="${esc(showCouple ? (r?.partner || '') : '')}" placeholder="Ej. Nancy">
         </label>
       </div>
-      <label class="field"><span>Notas</span>
-        <input name="notes" value="${esc(r?.notes || '')}" placeholder="Ej. Pareja 1 · Ensayos en casa de Prisci">
+      <div class="form-grid">
+        <label class="field"><span>Teléfono / WhatsApp</span>
+          <input name="phone" type="tel" value="${esc(r?.phone || '')}" placeholder="0991234567">
+        </label>
+        <label class="field"><span>Orden en lista</span>
+          <input name="sort" type="number" min="1" value="${esc(r?.sort ?? count + 1)}">
+        </label>
+      </div>
+      <label class="field"><span>Notas / indicaciones</span>
+        <input name="notes" value="${esc(r?.notes || '')}" placeholder="Ej. Supervisión general, equipo de sonido…">
       </label>`,
     onSubmit: async (fd) => {
       const s = (k) => String(fd.get(k) || '').trim() || null;
       const role = s('role');
+      const person = s('person');
       if (!role) throw new Error('Escribe el nombre del rol.');
-      const payload = { role, person: s('person'), partner: s('partner'), phone: s('phone'), notes: s('notes'), sort: Number(fd.get('sort')) || count + 1 };
-      if (isEdit) { await db.update('team_roles', r.id, payload); toast('Rol actualizado ✔'); }
-      else { await db.insert('team_roles', payload); toast('Rol agregado ✔'); }
+      if (!person) throw new Error('Escribe el nombre de la persona encargada.');
+      const couple = isCoupleRole(role);
+      const partner = couple ? s('partner') : null;
+      if (couple && !partner) throw new Error('Escribe el nombre de la dama para esta pareja.');
+
+      const payload = {
+        role,
+        person,
+        partner,
+        phone: s('phone'),
+        notes: s('notes'),
+        sort: Number(fd.get('sort')) || count + 1,
+      };
+      if (isEdit) { await db.update('team_roles', r.id, payload); toast('Rol actualizado y sincronizado ✔'); }
+      else { await db.insert('team_roles', payload); toast('Rol agregado y sincronizado ✔'); }
     },
   });
+
+  // Lógica dinámica: el campo de Dama/Pareja SOLO aparece cuando el rol es "Damas y caballeros"
+  const roleInp = form.querySelector('#m-role-input');
+  const partnerWrap = form.querySelector('#m-partner-wrap');
+  const personLbl = form.querySelector('#m-person-lbl');
+  const personInp = form.querySelector('input[name="person"]');
+  const syncFields = () => {
+    const couple = isCoupleRole(roleInp.value);
+    partnerWrap.hidden = !couple;
+    personLbl.textContent = couple ? 'Caballero *' : 'Hermano / Persona encargada *';
+    personInp.placeholder = couple ? 'Ej. Manuel' : 'Ej. Alfonso Carangui';
+  };
+  roleInp.addEventListener('input', syncFields);
+  roleInp.addEventListener('change', syncFields);
 }
 
 function openSongModal(song, count) {
@@ -338,115 +389,4 @@ function openAccessModal() {
       toast(`Acceso autorizado para ${display_name} (${db.formatPhone(phone)}) ✔`);
     },
   });
-}
-
-function openRoleGuidePdf(kind, { wedding, couples, staff, songs, guests, tables }) {
-  const w = window.open('', '_blank');
-  if (!w) return toast('Permite ventanas emergentes para abrir la guía PDF.', 'error');
-  const dateTxt = wedding.wedding_date ? fmtDate(wedding.wedding_date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : 'Viernes 26 de febrero de 2027';
-
-  const guides = {
-    damas: {
-      title: 'GUÍA PARA CABALLEROS Y DAMAS',
-      verse: '“Que se adornen con ropa apropiada, con modestia y buen juicio” — 1 Timoteo 2:9',
-      blocks: [
-        ['1. Principios Bíblicos', [
-          'Honrar a Jehová con alegría, modestia y buen ejemplo (Gál. 5:22, 23; 1 Cor. 10:31).',
-          'Evitar costumbres supersticiosas: no arrojar arroz, confeti ni pétalos, ni lanzar ramo o liga (2 Cor. 6:14-17).',
-          'Mantener reverencia durante el discurso bíblico y las oraciones en el Salón del Reino (Ecl. 5:1).',
-        ]],
-        ['2. Compromisos y Parejas', [
-          `Fecha de la boda: ${dateTxt}. Llegar al Salón del Reino 1 hora antes ya cambiados y listos.`,
-          'Ensayos en casa de Prisci el día que sea más cómodo para todos (viernes o sábado).',
-          ...couples.map((c, i) => `Pareja ${i + 1}: ${c.partner || ''} y ${c.person || ''}`),
-        ]],
-        ['3. Código de Vestimenta (Verde Salvia y Beige)', [
-          'Damas: vestido largo verde salvia satinado, elegante y modesto (con mangas, sin escotes pronunciados ni aberturas altas).',
-          'Caballeros: camisa blanca manga larga, corbatín y fajín verde salvia, prendedor floral, pantalón beige claro y zapatos cafés.',
-          'Novio: traje completo de 3 piezas en verde salvia.',
-        ]],
-        ['4. Mix de Baile (~8 minutos)', songs.map((s, i) => `${i + 1}. ${s.title}${s.artist ? ` — ${s.artist}` : ''}${s.url ? ` (${s.url})` : ''}`)],
-      ],
-    },
-    director: {
-      title: 'GUÍA DEL DIRECTOR DEL BANQUETE',
-      verse: '“Sírvanle un poco al director del banquete” — Juan 2:8',
-      blocks: [
-        ['1. Misión Principal', [
-          `Hermano asignado: ${wedding.banquet_director || staff.find((r) => /director/i.test(r.role))?.person || 'Por confirmar'}.`,
-          'Velar con calma y buen juicio para que todo en la recepción marche de forma digna y ordenada (1 Cor. 14:40).',
-          'Resolver cualquier imprevisto con discreción para que Freddy y Priscila disfruten tranquilos.',
-        ]],
-        ['2. Supervisión de Principios Clave', [
-          'Moderación con bebidas alcohólicas: vigilar que nadie beba de más ni haya descontrol (Rom. 13:13).',
-          'Música y volumen: confirmar que se use solo la lista aprobada y a un volumen que permita conversar (Filip. 4:8).',
-          'Palabras y videos: verificar que todo mensaje o proyección sea limpio y edificante (Efes. 5:3).',
-        ]],
-        ['3. Coordinación con Otros Equipos', [
-          'Coordinar con acomodadores el ingreso ordenado de los invitados a sus mesas.',
-          'Avisar a cocina/catering, audio y fotógrafo los tiempos de entrada, comida, torta y cierre puntual.',
-        ]],
-      ],
-    },
-    audio: {
-      title: 'GUÍA DE AUDIO, MÚSICA Y FOTOGRAFÍA',
-      verse: '“Todo lo que sea digno, puro y amable… sigan considerando estas cosas” — Filipenses 4:8',
-      blocks: [
-        ['1. Reverencia en el Salón del Reino', [
-          'No caminar por los pasillos durante el discurso bíblico ni las oraciones, ni subir a la plataforma (Ecl. 5:1).',
-          'Evitar flashes molestos o distracciones; tomar las fotos grupales al concluir el discurso.',
-        ]],
-        ['2. Música y Sonido en la Recepción', [
-          'Tener toda la lista musical revisada y descargada sin conexión a internet.',
-          'Mantener un volumen agradable que permita a las familias conversar cómodamente.',
-          ...songs.map((s, i) => `Mix #${i + 1}: ${s.title}${s.artist ? ` — ${s.artist}` : ''}`),
-        ]],
-      ],
-    },
-    acomodadores: {
-      title: 'GUÍA DE ACOMODADORES Y LOGÍSTICA',
-      verse: '“Sigan la senda de la hospitalidad” — Romanos 12:13',
-      blocks: [
-        ['1. En el Salón del Reino', [
-          'Recibir a los asistentes con una sonrisa cálida y reservar las primeras filas para familiares y acompañantes.',
-          'Ayudar con especial cariño a personas mayores y a familiares no Testigos (Col. 4:6).',
-        ]],
-        ['2. En el Local de Recepción', [
-          `Aforo previsto: ${wedding.guest_target || 100} invitados distribuidos en ${tables.length} mesas (${guests.length} invitaciones registradas).`,
-          'Recibir en la entrada con la lista alfabética y el plano de mesas para evitar aglomeraciones (Prov. 22:3).',
-          'Coordinar el orden en la mesa de regalos y la salida puntual al finalizar.',
-        ]],
-      ],
-    },
-  };
-
-  const g = guides[kind] || guides.damas;
-  w.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${esc(g.title)} · ${esc(wedding.couple_names || 'Freddy & Priscila')}</title>
-  <style>
-    @page{size:A4 portrait;margin:12mm;}
-    body{font-family:Segoe UI,Arial,sans-serif;color:#1F2D24;max-width:780px;margin:0 auto;padding:18px;}
-    header{background:#2F4B38;color:#fff;padding:18px 22px;border-radius:10px;border-bottom:4px solid #B6863A;margin-bottom:16px;}
-    header h1{margin:0 0 4px;font-size:20px;letter-spacing:0.6px;}
-    header p{margin:0;color:#F5E6C8;font-size:13px;}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-    .box{border:1px solid #C3D4C6;border-radius:8px;padding:12px 14px;background:#FCFBF8;}
-    .box h2{margin:0 0 8px;font-size:13.5px;color:#2F4B38;border-bottom:1px solid #E2ECE4;padding-bottom:5px;}
-    .box ul{margin:0;padding-left:16px;font-size:12.5px;line-height:1.48;}
-    .box li{margin-bottom:5px;}
-    footer{margin-top:14px;text-align:center;font-size:11.5px;color:#55665B;border-top:1px solid #DFE6DF;padding-top:8px;}
-    @media print { .no-print{display:none;} }
-  </style></head><body>
-  <div class="no-print" style="margin-bottom:12px;text-align:right;">
-    <button onclick="window.print()" style="padding:9px 16px;background:#2F4B38;color:#fff;border:none;border-radius:7px;font-weight:700;cursor:pointer;">🖨️ Imprimir / Guardar como PDF</button>
-  </div>
-  <header>
-    <h1>${esc(g.title)}</h1>
-    <p>${esc(wedding.couple_names || 'Freddy & Priscila')} · ${esc(dateTxt)} · ${esc(g.verse)}</p>
-  </header>
-  <div class="grid">
-    ${g.blocks.map(([h, items]) => `<div class="box"><h2>${esc(h)}</h2><ul>${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('')}
-  </div>
-  <footer>Basado en principios bíblicos y La Atalaya (diciembre de 2025) · “Háganlo todo de forma digna y ordenada” (1 Cor. 14:40)</footer>
-  </body></html>`);
-  w.document.close();
 }

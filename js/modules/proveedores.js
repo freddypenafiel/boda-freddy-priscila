@@ -121,6 +121,10 @@ export async function renderProveedores(el, ctx) {
       const v = vendors.find((x) => String(x.id) === String(b.dataset.toBudget));
       if (!v) return;
       try {
+        const existing = await db.list('budget_items');
+        if (existing.some((it) => String(it.vendor_id) === String(v.id))) {
+          return toast(`${v.name} ya tiene un rubro creado en Presupuesto.`, 'error');
+        }
         await db.insert('budget_items', {
           category: 'proveedores',
           concept: `${v.category ? v.category + ': ' : ''}${v.name}`,

@@ -10,6 +10,7 @@ let ctx = null;
 let cleanup = null;
 let unsubscribe = null;
 let unsubPresence = null;
+let unsubSync = null;
 let unsubWait = null;
 let currentKey = null;
 let deferredInstall = null;
@@ -246,6 +247,7 @@ function startApp(member) {
       </div>
     </header>
 
+    <div id="sync-status-bar" class="sync-bar" hidden></div>
     <div id="live-request-bar" class="request-banner-wrap"></div>
 
     <nav class="modnav" aria-label="Módulos">
@@ -285,10 +287,12 @@ function startApp(member) {
     </div>
   </div>`;
 
-  // Presencia en tiempo real
+  // Presencia en tiempo real + indicador de sincronización en la nube
   db.presence.start(member, 'Mi boda');
   unsubPresence = db.presence.onChange(updateLiveUi);
   updateLiveUi(db.presence.getOnline());
+  unsubSync = db.sync.onChange(updateSyncBar);
+  updateSyncBar(db.sync.getState());
 
   // Revisar solicitudes pendientes al iniciar (solo Admin)
   if (ctx.isAdmin) refreshPendingRequests(true);
@@ -346,6 +350,33 @@ function startApp(member) {
 function updateLiveUi(online) {
   const lbl = document.getElementById('live-count');
   if (lbl) lbl.textContent = String(Math.max(1, online.length));
+}
+
+let syncHideTimer = null;
+function updateSyncBar(st) {
+  const bar = document.getElementById('sync-status-bar');
+  if (!bar) return;
+  clearTimeout(syncHideTimer);
+  if (st.status === 'offline') {
+    bar.className = 'sync-bar sync-offline';
+    bar.innerHTML = '⚠️ <strong>Sin conexión a internet</strong> — tus cambios necesitan conexión para guardarse en la nube.';
+    bar.hidden = false;
+  } else if (st.status === 'error') {
+    bar.className = 'sync-bar sync-err';
+    bar.innerHTML = `⚠️ Error al guardar en la nube: ${esc(st.message || 'revisa tu conexión')}`;
+    bar.hidden = false;
+  } else if (st.status === 'saving') {
+    bar.className = 'sync-bar sync-saving';
+    bar.innerHTML = '☁️ Guardando y sincronizando con la nube…';
+    bar.hidden = false;
+  } else if (st.status === 'saved') {
+    bar.className = 'sync-bar sync-saved';
+    bar.innerHTML = '✔ Guardado y sincronizado en la nube (Supabase)';
+    bar.hidden = false;
+    syncHideTimer = setTimeout(() => { if (bar) bar.hidden = true; }, 2600);
+  } else {
+    bar.hidden = true;
+  }
 }
 
 async function refreshPendingRequests(isInitial) {
@@ -418,15 +449,27 @@ async function openLiveCenterModal() {
   const online = db.presence.getOnline();
   const onlinePhones = new Set(online.map((o) => o.phone));
 
+  const syncSt = db.sync.getState();
+  const syncTime = syncSt.lastSyncAt
+    ? new Date(syncSt.lastSyncAt).toLocaleTimeString('es-EC', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : 'Conectado';
+
   const back = document.createElement('div');
   back.className = 'modal-backdrop';
   back.innerHTML = `
   <div class="modal modal-wide">
     <header class="modal-head">
-      <h3>${icon('users', 18)} Conectados en Vivo y Accesos</h3>
+      <h3>${icon('users', 18)} Conectados, Sincronización y Accesos</h3>
       <button type="button" class="icon-btn" data-close>${icon('x', 18)}</button>
     </header>
     <div class="modal-body live-modal-body">
+      <div class="sync-card">
+        <div>
+          <strong>${db.getMode() === 'cloud' ? '☁️ Base de datos en la nube activa (Supabase)' : '📱 Modo demo local'}</strong>
+          <small class="muted" style="display:block;">${syncSt.status === 'offline' ? 'Sin conexión a internet' : `Sincronizado en tiempo real · Última verificación: ${esc(syncTime)}`}</small>
+        </div>
+        <button type="button" class="chip-btn" id="btn-sync-now">${icon('refresh', 13)} Sincronizar ahora</button>
+      </div>
       ${ctx.isAdmin && pending.length ? `
       <div class="live-section">
         <h4 class="live-sec-title warn">${icon('bell', 15)} Solicitudes pendientes (${pending.length})</h4>
@@ -482,6 +525,14 @@ async function openLiveCenterModal() {
   document.body.appendChild(back);
   const close = () => { back.classList.remove('open'); setTimeout(() => back.remove(), 200); };
   back.addEventListener('click', (e) => { if (e.target === back || e.target.closest('[data-close]')) close(); });
+
+  back.querySelector('#btn-sync-now')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const ok = await db.sync.pingNow();
+    btn.disabled = false;
+    toast(ok ? '✔ Todos los datos están sincronizados con Supabase' : 'No se pudo conectar con Supabase', ok ? 'ok' : 'error');
+  });
 
   back.querySelectorAll('[data-m-app]').forEach((b) => b.addEventListener('click', async () => {
     try {
@@ -543,6 +594,7 @@ function teardown() {
   if (cleanup) { cleanup(); cleanup = null; }
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
   if (unsubPresence) { unsubPresence(); unsubPresence = null; }
+  if (unsubSync) { unsubSync(); unsubSync = null; }
   if (unsubWait) { unsubWait(); unsubWait = null; }
   db.presence.stop();
   window.removeEventListener('hashchange', onHash);

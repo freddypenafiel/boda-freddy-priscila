@@ -1,5 +1,6 @@
 // Módulo "Web de boda": gestión y vista previa de la página pública para los invitados.
 import * as db from '../db.js';
+import { PUBLIC_SITE_URL } from '../config.js';
 import { esc, toast, fmtDate } from '../ui.js';
 import { icon } from '../icons.js';
 
@@ -10,10 +11,14 @@ export async function renderWebBoda(el) {
   ]);
 
   const demoParam = db.getMode() === 'demo' ? '?demo=1' : '';
-  const publicUrl = new URL(`boda/${demoParam}`, location.href).href;
+  const isLocalApp = Boolean(window.Capacitor) || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const baseBoda = (db.getMode() === 'cloud' && isLocalApp)
+    ? `${PUBLIC_SITE_URL}boda/`
+    : new URL('boda/', location.href).href;
+  const publicUrl = `${baseBoda}${demoParam}`;
   const sampleGuest = guests[0];
   const sampleUrl = sampleGuest
-    ? new URL(`boda/?code=${encodeURIComponent(sampleGuest.rsvp_code)}${db.getMode() === 'demo' ? '&demo=1' : ''}`, location.href).href
+    ? `${baseBoda}?code=${encodeURIComponent(sampleGuest.rsvp_code)}${db.getMode() === 'demo' ? '&demo=1' : ''}`
     : publicUrl;
 
   const missingInfo = [];
