@@ -2,6 +2,7 @@ node_modules/
 www/
 android/
 *.apk
+!downloads/Boda_Freddy_y_Priscila.apk
 .env
 .env.local
 .DS_Store

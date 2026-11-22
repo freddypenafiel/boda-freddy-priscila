@@ -4,8 +4,16 @@ import { esc, toast, openModal, fmtMoney, fmtDate, todayISO, celebrate } from '.
 import { icon } from '../icons.js';
 import { CATEGORIES } from '../data/seed.js';
 import { exportBudgetPdf } from '../pdf.js';
+import {
+  parsePaymentMeta,
+  encodePaymentNote,
+  prepareReceiptFile,
+  formatFileSize,
+  isImageReceipt,
+  openReceiptViewer,
+} from '../receipts.js';
 
-const PAY_METHODS = ['Transferencia', 'Deuna', 'Banco Pichincha', 'Efectivo', 'Tarjeta (sin diferir)'];
+const PAY_METHODS = ['Transferencia', 'Deuna', 'Banco Pichincha', 'Banco Guayaquil', 'Produbanco', 'Cooperativa JEP', 'Efectivo', 'Tarjeta (sin diferir)'];
 
 export async function renderPresupuesto(el, ctx) {
   const [wedding, items, payments, vendors] = await Promise.all([
@@ -109,8 +117,12 @@ export async function renderPresupuesto(el, ctx) {
                   ${b.notes ? `<small class="muted">${esc(b.notes)}</small>` : ''}
                 </div>
                 ${itemPays.length ? `<div class="pay-list">
-                  ${itemPays.map((p) => `<span class="pay-chip">${fmtMoney(p.amount)} · ${fmtDate(p.paid_on, { day: 'numeric', month: 'short' })}${p.method ? ` (${esc(p.method)})` : ''}
-                    ${ctx.isAdmin ? `<button class="pay-del" data-del-pay="${esc(p.id)}" title="Borrar abono">×</button>` : ''}</span>`).join('')}
+                  ${itemPays.map((p) => {
+                    const pm = parsePaymentMeta(p);
+                    return `<span class="pay-chip">${fmtMoney(p.amount)} · ${fmtDate(p.paid_on, { day: 'numeric', month: 'short' })}${p.method ? ` (${esc(p.method)})` : ''}
+                      ${pm.receipt ? `<button type="button" class="pay-rcp" data-view-pay="${esc(p.id)}" title="Ver comprobante">🧾</button>` : ''}
+                      ${ctx.isAdmin ? `<button class="pay-del" data-del-pay="${esc(p.id)}" title="Borrar abono">×</button>` : ''}</span>`;
+                  }).join('')}
                 </div>` : ''}
               </td>
               <td>${fmtMoney(b.estimated)}</td>
@@ -142,7 +154,15 @@ export async function renderPresupuesto(el, ctx) {
   }));
   el.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => {
     const it = items.find((x) => String(x.id) === String(b.dataset.pay));
-    if (it) openPayModal(it);
+    if (it) openPayModal(it, vendorById[String(it.vendor_id)] || null);
+  }));
+  el.querySelectorAll('[data-view-pay]').forEach((b) => b.addEventListener('click', () => {
+    const p = payments.find((x) => String(x.id) === String(b.dataset.viewPay));
+    if (!p) return;
+    const pm = parsePaymentMeta(p);
+    const it = items.find((x) => String(x.id) === String(p.budget_item_id));
+    const ven = it?.vendor_id ? vendorById[String(it.vendor_id)] : null;
+    if (pm.receipt) openReceiptViewer({ payment: p, vendorName: ven?.name || pm.vendorName, budgetConcept: it?.concept, receipt: pm.receipt });
   }));
   el.querySelectorAll('[data-del-pay]').forEach((b) => b.addEventListener('click', async () => {
     if (!confirm('¿Borrar este abono?')) return;
@@ -201,8 +221,9 @@ function openItemModal(item, vendors) {
   });
 }
 
-function openPayModal(item) {
-  openModal({
+function openPayModal(item, vendor = null) {
+  let preparedFile = null;
+  const { form } = openModal({
     title: `Registrar abono · ${item.concept}`,
     submitLabel: 'Guardar abono',
     body: `
@@ -217,21 +238,63 @@ function openPayModal(item) {
       <label class="field"><span>Método de pago</span>
         <select name="method">${PAY_METHODS.map((m) => `<option value="${m}">${m}</option>`).join('')}</select>
       </label>
-      <label class="field"><span>Comprobante / nota</span>
+      <label class="field"><span>Nota / referencia</span>
         <input name="note" placeholder="Ej. Anticipo 50 %, comprobante #123">
-      </label>`,
+      </label>
+      <div class="field">
+        <span>Comprobante (foto o PDF · opcional)</span>
+        <label class="receipt-drop compact">
+          <input type="file" id="pay-rcp-file" accept="image/*,application/pdf" hidden>
+          <div class="receipt-drop-empty" id="pay-rcp-empty">
+            ${icon('upload', 18)}
+            <strong>Subir foto o PDF del comprobante</strong>
+            <small class="muted">Se guarda en la nube y se ve también en Proveedores</small>
+          </div>
+          <div class="receipt-preview" id="pay-rcp-prev" hidden></div>
+        </label>
+      </div>`,
     onSubmit: async (fd) => {
       const amount = Number(fd.get('amount'));
       if (!amount || amount <= 0) throw new Error('Ingresa un monto mayor a 0.');
+      const plainNote = String(fd.get('note') || '').trim();
+      const encodedNote = encodePaymentNote(plainNote, {
+        vendorId: vendor?.id || item.vendor_id || null,
+        vendorName: vendor?.name || null,
+        receipt: preparedFile,
+      });
       await db.insert('payments', {
         budget_item_id: item.id,
         amount,
         paid_on: String(fd.get('paid_on') || todayISO()),
         method: String(fd.get('method') || '').trim() || null,
-        note: String(fd.get('note') || '').trim() || null,
+        note: encodedNote,
       });
       celebrate();
-      toast(`Abono de ${fmtMoney(amount)} guardado en la nube ✔`);
+      toast(preparedFile ? `Abono de ${fmtMoney(amount)} y comprobante guardados ✔` : `Abono de ${fmtMoney(amount)} guardado en la nube ✔`);
     },
+  });
+
+  const fileIn = form.querySelector('#pay-rcp-file');
+  const emptyEl = form.querySelector('#pay-rcp-empty');
+  const prevEl = form.querySelector('#pay-rcp-prev');
+  fileIn?.addEventListener('change', async () => {
+    const f = fileIn.files?.[0];
+    if (!f) return;
+    try {
+      preparedFile = await prepareReceiptFile(f);
+      emptyEl.hidden = true;
+      prevEl.hidden = false;
+      prevEl.innerHTML = `
+        ${isImageReceipt(preparedFile)
+          ? `<img src="${preparedFile.data}" alt="Comprobante">`
+          : `<div class="receipt-prev-pdf">${icon('fileText', 24)}<span>PDF</span></div>`}
+        <div class="receipt-prev-info">
+          <strong>${esc(preparedFile.name)}</strong>
+          <small class="muted">${formatFileSize(preparedFile.size)} · Listo ✔</small>
+        </div>`;
+    } catch (e) {
+      preparedFile = null;
+      toast(e.message, 'error');
+    }
   });
 }

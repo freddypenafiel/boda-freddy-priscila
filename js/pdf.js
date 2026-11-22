@@ -3,6 +3,7 @@
 // Siempre abre dentro de la app con botón "← Volver" y soporte del botón Atrás de Android.
 import { esc, toast, fmtMoney, fmtDate } from './ui.js';
 import { STAGES, CATEGORIES } from './data/seed.js';
+import { parsePaymentMeta } from './receipts.js';
 
 let html2pdfPromise = null;
 
@@ -512,15 +513,18 @@ export function exportBudgetPdf({ wedding, items, payments, vendors }) {
       </table>
       ${payments.length ? `<h2>Historial de Abonos (${payments.length})</h2>
       <table>
-        <thead><tr><th>Fecha</th><th>Rubro</th><th>Método</th><th>Nota</th><th class="right">Monto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Rubro / Proveedor</th><th>Método</th><th>Nota / Comprobante</th><th class="right">Monto</th></tr></thead>
         <tbody>
           ${payments.map((p) => {
             const it = items.find((x) => String(x.id) === String(p.budget_item_id));
+            const pm = parsePaymentMeta(p);
+            const lbl = it?.concept || pm.vendorName || '—';
+            const noteTxt = [pm.note, pm.receipt ? `🧾 ${pm.receipt.name}` : ''].filter(Boolean).join(' · ') || '—';
             return `<tr>
               <td>${esc(fmtDate(p.paid_on, { day: 'numeric', month: 'short', year: 'numeric' }))}</td>
-              <td>${esc(it?.concept || '—')}</td>
+              <td>${esc(lbl)}</td>
               <td>${esc(p.method || '—')}</td>
-              <td>${esc(p.note || '—')}</td>
+              <td>${esc(noteTxt)}</td>
               <td class="right"><strong>${fmtMoney(p.amount)}</strong></td>
             </tr>`;
           }).join('')}
@@ -529,29 +533,46 @@ export function exportBudgetPdf({ wedding, items, payments, vendors }) {
   });
 }
 
-export function exportVendorsPdf({ wedding, vendors }) {
+export function exportVendorsPdf({ wedding, vendors, payments = [], budgetItems = [] }) {
   const statusMap = { cotizando: 'Cotizando', reservado: 'Reservado', pagado: 'Pagado', descartado: 'Descartado' };
   const confirmed = vendors.filter((v) => v.status === 'reservado' || v.status === 'pagado');
   const sum = confirmed.reduce((n, v) => n + Number(v.quote || 0), 0);
+  const budgetById = Object.fromEntries(budgetItems.map((b) => [String(b.id), b]));
+
+  const paidByVendor = {};
+  const rcpsByVendor = {};
+  payments.forEach((p) => {
+    const pm = parsePaymentMeta(p);
+    const bItem = p.budget_item_id ? budgetById[String(p.budget_item_id)] : null;
+    const vid = pm.vendorId || (bItem?.vendor_id ? String(bItem.vendor_id) : null);
+    if (!vid) return;
+    paidByVendor[vid] = (paidByVendor[vid] || 0) + Number(p.amount || 0);
+    if (pm.receipt) rcpsByVendor[vid] = (rcpsByVendor[vid] || 0) + 1;
+  });
 
   openInAppPdfViewer({
-    kicker: '📦 Proveedores y Cotizaciones · Prov. 21:5',
+    kicker: '📦 Proveedores, Pagos y Comprobantes · Prov. 21:5',
     title: `Directorio de Proveedores — ${wedding.couple_names || 'Freddy & Priscila'}`,
     subtitle: `${vendors.length} proveedores · ${confirmed.length} reservados/pagados (${fmtMoney(sum)})`,
     verse: '“Los planes del que es diligente sin duda dan buenos resultados” — Proverbios 21:5',
     fileBase: 'Proveedores_Boda_Freddy_Priscila',
     bodyHtml: `
       <table>
-        <thead><tr><th>Categoría</th><th>Proveedor</th><th>Contacto y Teléfono</th><th>Estado</th><th class="right">Cotización</th><th>Notas</th></tr></thead>
+        <thead><tr><th>Categoría</th><th>Proveedor</th><th>Contacto y Teléfono</th><th>Estado</th><th class="right">Cotización</th><th class="right">Abonado</th><th>Notas</th></tr></thead>
         <tbody>
-          ${vendors.length ? vendors.map((v) => `<tr>
-            <td>${esc(v.category || '—')}</td>
-            <td><strong>${esc(v.name)}</strong></td>
-            <td>${esc([v.contact, v.phone, v.email].filter(Boolean).join(' · ') || '—')}</td>
-            <td><span class="pdf-tag">${esc(statusMap[v.status] || v.status)}</span></td>
-            <td class="right">${v.quote != null ? fmtMoney(v.quote) : '—'}</td>
-            <td>${esc(v.notes || '—')}</td>
-          </tr>`).join('') : '<tr><td colspan="6" style="text-align:center;">Sin proveedores registrados todavía.</td></tr>'}
+          ${vendors.length ? vendors.map((v) => {
+            const paid = paidByVendor[String(v.id)] || 0;
+            const rcps = rcpsByVendor[String(v.id)] || 0;
+            return `<tr>
+              <td>${esc(v.category || '—')}</td>
+              <td><strong>${esc(v.name)}</strong>${rcps ? `<br><small>🧾 ${rcps} comprobante(s)</small>` : ''}</td>
+              <td>${esc([v.contact, v.phone, v.email].filter(Boolean).join(' · ') || '—')}</td>
+              <td><span class="pdf-tag">${esc(statusMap[v.status] || v.status)}</span></td>
+              <td class="right">${v.quote != null ? fmtMoney(v.quote) : '—'}</td>
+              <td class="right">${paid ? `<strong>${fmtMoney(paid)}</strong>` : '—'}</td>
+              <td>${esc(v.notes || '—')}</td>
+            </tr>`;
+          }).join('') : '<tr><td colspan="7" style="text-align:center;">Sin proveedores registrados todavía.</td></tr>'}
         </tbody>
       </table>`,
   });

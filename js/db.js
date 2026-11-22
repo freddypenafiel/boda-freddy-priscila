@@ -355,13 +355,13 @@ const cmp = (a, b) => {
   return typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), 'es');
 };
 
-export async function list(table, { order = null, ascending = true } = {}) {
+export async function list(table, { order = null, ascending = true, select = '*' } = {}) {
   if (mode === 'demo') {
     const rows = (demo[table] || []).map((r) => ({ ...r }));
     if (order) rows.sort((a, b) => cmp(a[order], b[order]) * (ascending ? 1 : -1));
     return rows;
   }
-  let q = sb.from(table).select('*');
+  let q = sb.from(table).select(select);
   if (order) q = q.order(order, { ascending, nullsFirst: false });
   const { data, error } = await q;
   if (error) throw new Error(error.message);

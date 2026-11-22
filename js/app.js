@@ -1,9 +1,11 @@
 // Punto de entrada: arranque, acceso en vivo (Nombre + Teléfono), presencia online,
 // aprobación de solicitudes en 1 clic, navegación nativa móvil y enrutador.
 import * as db from './db.js';
+import { APP_VERSION } from './config.js';
 import { esc, toast, celebrate } from './ui.js';
 import { icon } from './icons.js';
 import { ROUTES, renderComingSoon } from './modules/registry.js';
+import { checkForAppUpdate } from './updater.js';
 
 const root = document.getElementById('app');
 let ctx = null;
@@ -248,6 +250,7 @@ function startApp(member) {
     </header>
 
     <div id="sync-status-bar" class="sync-bar" hidden></div>
+    <div id="update-banner-wrap" class="update-banner-wrap"></div>
     <div id="live-request-bar" class="request-banner-wrap"></div>
 
     <nav class="modnav" aria-label="Módulos">
@@ -296,6 +299,9 @@ function startApp(member) {
 
   // Revisar solicitudes pendientes al iniciar (solo Admin)
   if (ctx.isAdmin) refreshPendingRequests(true);
+
+  // Comprobar en segundo plano si existe una nueva versión de la app (solo avisa si hay actualización)
+  setTimeout(() => checkForAppUpdate({ silent: true }), 1100);
 
   // Abrir Centro de Conectados y Solicitudes
   root.querySelector('#btn-live-center').addEventListener('click', () => openLiveCenterModal());
@@ -470,6 +476,13 @@ async function openLiveCenterModal() {
         </div>
         <button type="button" class="chip-btn" id="btn-sync-now">${icon('refresh', 13)} Sincronizar ahora</button>
       </div>
+      <div class="sync-card version-card">
+        <div>
+          <strong>📱 Versión de la app: v${esc(APP_VERSION)}</strong>
+          <small class="muted" style="display:block;">${window.Capacitor ? 'App Android · Aviso automático cuando publiques mejoras' : 'Versión Web / PWA'}</small>
+        </div>
+        <button type="button" class="chip-btn" id="btn-check-update">${icon('download', 13)} Buscar actualizaciones</button>
+      </div>
       ${ctx.isAdmin && pending.length ? `
       <div class="live-section">
         <h4 class="live-sec-title warn">${icon('bell', 15)} Solicitudes pendientes (${pending.length})</h4>
@@ -532,6 +545,14 @@ async function openLiveCenterModal() {
     const ok = await db.sync.pingNow();
     btn.disabled = false;
     toast(ok ? '✔ Todos los datos están sincronizados con Supabase' : 'No se pudo conectar con Supabase', ok ? 'ok' : 'error');
+  });
+
+  back.querySelector('#btn-check-update')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const res = await checkForAppUpdate({ silent: false });
+    btn.disabled = false;
+    if (res.hasUpdate) close();
   });
 
   back.querySelectorAll('[data-m-app]').forEach((b) => b.addEventListener('click', async () => {

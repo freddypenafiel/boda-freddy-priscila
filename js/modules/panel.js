@@ -33,7 +33,7 @@ export async function renderPanel(el, ctx) {
     db.list('guests'),
     db.list('team_roles', { order: 'sort' }),
     db.list('budget_items'),
-    db.list('payments'),
+    db.list('payments', { select: 'id,budget_item_id,amount,paid_on,method' }),
     db.list('songs', { order: 'sort' }),
   ]);
 

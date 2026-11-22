@@ -13,10 +13,15 @@ Set-Location (Join-Path $root "android")
 if ($LASTEXITCODE -ne 0) { throw "Gradle build failed with exit code $LASTEXITCODE" }
 
 $srcApk = Join-Path $root "android\app\build\outputs\apk\debug\app-debug.apk"
-$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v4.0.apk"
+$dstApk = Join-Path $root "Boda_Freddy_y_Priscila_v5.0.apk"
+$dlDir  = Join-Path $root "downloads"
+$dlApk  = Join-Path $dlDir "Boda_Freddy_y_Priscila.apk"
 if (Test-Path $srcApk) {
   Copy-Item $srcApk $dstApk -Force
+  if (-not (Test-Path $dlDir)) { New-Item -ItemType Directory -Path $dlDir | Out-Null }
+  Copy-Item $srcApk $dlApk -Force
   Write-Host "APK listo: $dstApk"
+  Write-Host "APK OTA (GitHub Pages): $dlApk"
 } else {
   throw "No se encontró el APK generado en $srcApk"
 }

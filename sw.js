@@ -1,6 +1,6 @@
 // Service Worker PWA: acelera la carga y permite abrir la app sin conexión.
 // Nunca intercepta peticiones a Supabase ni a APIs externas.
-const CACHE = 'boda-fp-v8';
+const CACHE = 'boda-fp-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -18,7 +18,9 @@ const ASSETS = [
   './js/db.js',
   './js/icons.js',
   './js/pdf.js',
+  './js/receipts.js',
   './js/ui.js',
+  './js/updater.js',
   './js/vendor/html2pdf.bundle.min.js',
   './js/data/seed.js',
   './js/modules/registry.js',
@@ -53,6 +55,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return; // Nunca cachear Supabase ni CDNs aquí
+  if (url.pathname.endsWith('/version.json') || url.pathname.includes('/downloads/')) return; // Nunca cachear manifest de versión ni APK
 
   e.respondWith(
     fetch(req)
