@@ -487,6 +487,34 @@ export async function remove(table, id) {
   }
 }
 
+/** Reordena en lote la columna `sort` de cualquier tabla (canciones, tareas, equipo). */
+export async function reorder(table, orderedIds, startSort = 1) {
+  if (!Array.isArray(orderedIds) || !orderedIds.length) return;
+  setSync('saving', 'Guardando nuevo orden…');
+  try {
+    if (mode === 'demo') {
+      const rows = demo[table] || [];
+      orderedIds.forEach((id, idx) => {
+        const r = rows.find((x) => String(x.id) === String(id));
+        if (r) r.sort = startSort + idx;
+      });
+      saveDemo();
+      emit(table);
+    } else {
+      const results = await Promise.all(
+        orderedIds.map((id, idx) => sb.from(table).update({ sort: startSort + idx }).eq('id', id))
+      );
+      const firstErr = results.find((r) => r.error)?.error;
+      if (firstErr) throw new Error(firstErr.message);
+      emit(table);
+    }
+    setSync('saved', 'Orden guardado en la nube');
+  } catch (e) {
+    setSync(navigator.onLine === false ? 'offline' : 'error', e.message);
+    throw e;
+  }
+}
+
 /* ---------------- Teléfonos autorizados y aprobación en 1 clic ---------------- */
 export async function upsertAllowedPhone({ phone, display_name, role, area }) {
   const clean = normalizePhone(phone);

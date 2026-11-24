@@ -1,12 +1,12 @@
 {
-  "version": "5.0.0",
-  "versionCode": 5,
-  "releasedAt": "2026-11-21",
-  "title": "Comprobantes de Pago y Actualizaciones",
+  "version": "5.1.0",
+  "versionCode": 6,
+  "releasedAt": "2026-11-24",
+  "title": "Ordenar arrastrando con el dedo",
   "notes": [
-    "Sube comprobantes de transferencia o pago (foto o PDF) en cada proveedor y en Presupuesto",
-    "Visualiza, amplía y descarga tus comprobantes guardados en la nube en cualquier momento",
-    "Sistema automático de aviso cuando exista una nueva versión de la app para actualizar con 1 toque"
+    "Ahora puedes reordenar canciones del mix, tareas, parejas y equipo manteniendo pulsado o arrastrando el ícono ⋮⋮ con el dedo",
+    "El nuevo orden se guarda y sincroniza al instante en la nube (Supabase) para los dos",
+    "Actualización automática con 1 toque lista en Android y Web"
   ],
   "apkUrl": "https://freddypenafiel.github.io/boda-freddy-priscila/downloads/Boda_Freddy_y_Priscila.apk"
 }

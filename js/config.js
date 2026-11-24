@@ -8,7 +8,7 @@ export const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@
 export const PUBLIC_SITE_URL = 'https://freddypenafiel.github.io/boda-freddy-priscila/';
 
 // Control de versión y actualizaciones automáticas (OTA)
-export const APP_VERSION = '5.0.0';
-export const APP_VERSION_CODE = 5;
+export const APP_VERSION = '5.1.0';
+export const APP_VERSION_CODE = 6;
 export const UPDATE_CHECK_URL = `${PUBLIC_SITE_URL}version.json`;
 export const APK_DOWNLOAD_URL = `${PUBLIC_SITE_URL}downloads/Boda_Freddy_y_Priscila.apk`;

@@ -2035,3 +2035,61 @@
   .vendor-pay-summary { grid-template-columns: 1fr; }
   .receipt-meta-right { text-align: left; }
 }
+
+
+/* =====================================================================
+   v5.1: Reordenamiento Táctil (Arrastrar con el dedo / Mantener pulsado)
+   ===================================================================== */
+.sort-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--sage-700);
+  background: var(--sage-50);
+  border: 1px dashed var(--sage-200);
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 10px;
+}
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 36px;
+  border-radius: 8px;
+  color: var(--sage-600);
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+  margin-left: -4px;
+  transition: background 0.14s, color 0.14s;
+}
+.drag-handle:hover, .drag-handle:active {
+  background: var(--sage-100);
+  color: var(--sage-900);
+}
+.drag-handle:active { cursor: grabbing; }
+
+.is-dragging {
+  box-shadow: 0 16px 36px rgba(31, 53, 39, 0.24) !important;
+  border-color: var(--sage-600) !important;
+  background: #FFFFFF !important;
+  transform: scale(1.02);
+  opacity: 0.97;
+  transition: none !important;
+}
+.sort-placeholder {
+  list-style: none;
+  border-radius: 10px;
+  border: 2px dashed var(--sage-500);
+  background: rgba(74, 107, 83, 0.09);
+  transition: height 0.14s ease;
+}
+.sort-no-select, .sort-no-select * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+  -webkit-touch-callout: none !important;
+}

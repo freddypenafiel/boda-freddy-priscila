@@ -4,6 +4,7 @@ import { esc, toast, openModal, fmtDate, todayISO, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
 import { STAGES, CATEGORIES } from '../data/seed.js';
 import { exportTasksPdf } from '../pdf.js';
+import { enableTouchSort } from '../sortable.js';
 
 const STATUS_LABELS = {
   pendiente: 'Pendiente',
@@ -88,9 +89,17 @@ export async function renderTareas(el, ctx) {
   <div id="tasks-mount" class="stages-stack"></div>`;
 
   const mount = el.querySelector('#tasks-mount');
+  let sortCleanups = [];
+
+  function clearSorts() {
+    sortCleanups.forEach((fn) => fn?.());
+    sortCleanups = [];
+  }
 
   function paint() {
+    clearSorts();
     const q = filterState.q.trim().toLowerCase();
+    const isFiltered = Boolean(q || filterState.category !== 'all' || filterState.principle !== 'all' || filterState.status !== 'all');
     const filtered = tasks.filter((t) => {
       if (filterState.stage !== 'all' && t.stage !== filterState.stage) return false;
       if (filterState.category !== 'all' && t.category !== filterState.category) return false;
@@ -112,6 +121,7 @@ export async function renderTareas(el, ctx) {
       return;
     }
 
+    const canSort = ctx.isAdmin && !isFiltered;
     const activeStages = STAGES.filter((s) => filtered.some((t) => t.stage === s.key));
     mount.innerHTML = activeStages.map((s) => {
       const list = filtered.filter((t) => t.stage === s.key);
@@ -120,16 +130,17 @@ export async function renderTareas(el, ctx) {
         <header class="card-head">
           <div>
             <h2>${esc(s.label)}</h2>
-            <small class="muted">${esc(s.hint)}</small>
+            <small class="muted">${esc(s.hint)}${canSort && list.length > 1 ? ' · Mantén pulsado o arrastra ⋮⋮ para reordenar' : ''}</small>
           </div>
           <span class="pill pill-stage">${sDone}/${list.length}</span>
         </header>
-        <ul class="task-list">
+        <ul class="task-list" data-stage-list="${esc(s.key)}">
           ${list.map((t) => {
             const p = principleById[t.principle_id];
             const late = t.status !== 'hecho' && t.due_date && t.due_date < today;
             const cat = CATEGORIES[t.category];
-            return `<li class="task ${t.status === 'hecho' ? 'is-done' : ''}" data-id="${esc(t.id)}">
+            return `<li class="task ${t.status === 'hecho' ? 'is-done' : ''}" data-id="${esc(t.id)}" data-sort-id="${esc(t.id)}">
+              ${canSort ? `<button type="button" class="drag-handle" title="Arrastra o mantén pulsado para mover" aria-label="Reordenar tarea">${icon('grip', 15)}</button>` : ''}
               <label class="check" title="Marcar como completada">
                 <input type="checkbox" data-toggle="${esc(t.id)}" ${t.status === 'hecho' ? 'checked' : ''}>
                 <span class="check-box">${icon('check', 14)}</span>
@@ -196,6 +207,22 @@ export async function renderTareas(el, ctx) {
         } catch (e) { toast(e.message, 'error'); }
       });
     });
+
+    if (canSort) {
+      mount.querySelectorAll('[data-stage-list]').forEach((ul) => {
+        const stKey = ul.dataset.stageList;
+        const stageIdx = Math.max(0, STAGES.findIndex((s) => s.key === stKey));
+        const baseSort = stageIdx * 100 + 1;
+        sortCleanups.push(enableTouchSort(ul, {
+          onReorder: async (ids) => {
+            try {
+              await db.reorder('tasks', ids, baseSort);
+              toast('Orden de tareas guardado en la nube ✔');
+            } catch (e) { toast(e.message, 'error'); }
+          },
+        }));
+      });
+    }
   }
 
   paint();
@@ -207,6 +234,8 @@ export async function renderTareas(el, ctx) {
   el.querySelector('#f-prin').addEventListener('change', (e) => { filterState.principle = e.target.value; paint(); });
   el.querySelector('#btn-export-tasks-pdf').addEventListener('click', () => exportTasksPdf({ wedding, tasks, principles }));
   el.querySelector('#btn-new-task')?.addEventListener('click', () => openTaskModal(null, principles, tasks.length, assigneeSuggestions));
+
+  return () => clearSorts();
 }
 
 function openTaskModal(task, principles, count, assigneeSuggestions = []) {

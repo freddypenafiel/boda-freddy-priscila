@@ -4,6 +4,7 @@ import * as db from '../db.js';
 import { esc, toast, openModal, celebrate } from '../ui.js';
 import { icon } from '../icons.js';
 import { exportRoleGuidePdf } from '../pdf.js';
+import { enableTouchSort } from '../sortable.js';
 
 const ROLE_PRESETS = [
   'Damas y caballeros', 'Director del Banquete', 'Orador del discurso',
@@ -82,9 +83,10 @@ export async function renderEquipo(el, ctx) {
           <h2>${icon('users', 18)} Damas y Caballeros (${couples.length})</h2>
           ${ctx.isAdmin ? `<button class="chip-btn" id="btn-add-couple">${icon('plus', 13)} Pareja</button>` : ''}
         </header>
-        <ul class="team-list">
-          ${couples.map((r, i) => `<li class="team-row">
-            <span class="couple-n">${i + 1}</span>
+        <ul class="team-list" id="couples-sort-list">
+          ${couples.map((r, i) => `<li class="team-row" data-sort-id="${esc(r.id)}">
+            ${ctx.isAdmin ? `<button type="button" class="drag-handle" title="Arrastra o mantén pulsado para ordenar" aria-label="Reordenar">${icon('grip', 16)}</button>` : ''}
+            <span class="couple-n sort-num">${i + 1}</span>
             <div class="team-info">
               <strong>${esc(r.partner || 'Dama por definir')} &amp; ${esc(r.person || 'Caballero por definir')}</strong>
               <small class="muted">${esc([r.notes, r.phone].filter(Boolean).join(' · ') || 'Pareja asignada')}</small>
@@ -101,8 +103,9 @@ export async function renderEquipo(el, ctx) {
         <header class="card-head">
           <h2>${icon('star', 18)} Roles y Colaboradores (${staff.length})</h2>
         </header>
-        <ul class="team-list">
-          ${staff.map((r) => `<li class="team-row">
+        <ul class="team-list" id="staff-sort-list">
+          ${staff.map((r) => `<li class="team-row" data-sort-id="${esc(r.id)}">
+            ${ctx.isAdmin ? `<button type="button" class="drag-handle" title="Arrastra o mantén pulsado para ordenar" aria-label="Reordenar">${icon('grip', 16)}</button>` : ''}
             <div class="team-info">
               <strong>${esc(r.role)}</strong>
               <span>${r.person ? esc(r.person) : '<span class="tbd-pill">Por definir</span>'}</span>
@@ -124,9 +127,11 @@ export async function renderEquipo(el, ctx) {
           <h2>${icon('music', 18)} Música y Mix de Baile</h2>
           ${ctx.isAdmin ? `<button class="chip-btn" id="btn-new-song">${icon('plus', 13)} Canción</button>` : ''}
         </header>
-        <ul class="team-list">
-          ${songs.map((s, i) => `<li class="team-row">
-            <span class="couple-n">${i + 1}</span>
+        ${ctx.isAdmin && songs.length > 1 ? `<p class="sort-hint">${icon('grip', 13)} Mantén pulsado o arrastra <strong>⋮⋮</strong> para cambiar el orden del mix</p>` : ''}
+        <ul class="team-list" id="songs-sort-list">
+          ${songs.map((s, i) => `<li class="team-row" data-sort-id="${esc(s.id)}">
+            ${ctx.isAdmin ? `<button type="button" class="drag-handle" title="Arrastra o mantén pulsado para cambiar orden" aria-label="Reordenar canción">${icon('grip', 16)}</button>` : ''}
+            <span class="couple-n sort-num">${i + 1}</span>
             <div class="team-info">
               <strong>${esc(s.title)}</strong>
               <small class="muted">${esc([s.artist, s.purpose].filter(Boolean).join(' · '))}</small>
@@ -255,6 +260,30 @@ export async function renderEquipo(el, ctx) {
     try { await db.removeAllowedPhone(b.dataset.delAccess); toast('Acceso eliminado'); }
     catch (e) { toast(e.message, 'error'); }
   }));
+
+  // Reordenar arrastrando con el dedo (o manteniendo pulsado) y guardar en Supabase
+  const cleanups = [];
+  if (ctx.isAdmin) {
+    cleanups.push(enableTouchSort(el.querySelector('#songs-sort-list'), {
+      onReorder: async (ids) => {
+        try { await db.reorder('songs', ids, 1); toast('Orden de canciones guardado en la nube ✔'); }
+        catch (e) { toast(e.message, 'error'); }
+      },
+    }));
+    cleanups.push(enableTouchSort(el.querySelector('#couples-sort-list'), {
+      onReorder: async (ids) => {
+        try { await db.reorder('team_roles', ids, 1); toast('Orden de parejas guardado ✔'); }
+        catch (e) { toast(e.message, 'error'); }
+      },
+    }));
+    cleanups.push(enableTouchSort(el.querySelector('#staff-sort-list'), {
+      onReorder: async (ids) => {
+        try { await db.reorder('team_roles', ids, couples.length + 1); toast('Orden del equipo guardado ✔'); }
+        catch (e) { toast(e.message, 'error'); }
+      },
+    }));
+  }
+  return () => cleanups.forEach((fn) => fn?.());
 }
 
 function openRoleModal(r, count, presetRole = '') {
